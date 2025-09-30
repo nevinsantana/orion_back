@@ -1,0 +1,39 @@
+# Directorios de dependencias
+node_modules/
+# Archivos de depuración
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+# Logs del sistema
+logs/
+*.log
+# Archivos de caché del SO
+.DS_Store
+Thumbs.db
+# Archivos y carpetas del editor/IDE
+.vscode/
+.idea/
+# Archivos generados automáticamente
+dist/
+build/
+# Variables de entorno
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+# Archivos de caché específicos de Node
+.next/
+# Miniaturas de VS Code
+.vscode-insiders/
+# Archivos de credenciales o claves
+*.pem
+*.key
+# Certificados SSL
+cert/
+# Otros archivos generados
+coverage/
+*.tgz
+.DS_Store
+.env
