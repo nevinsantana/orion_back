@@ -18,8 +18,8 @@ const {
 router.post("/login", loginUsers);
 router.post("/forgot-password", forgotPassword);
 
-router.get("/", authMiddleware, getUsers); 
-router.post("/", authMiddleware, postUser);
+router.get("/", getUsers); 
+router.post("/", postUser);
 router.get("/:id", authMiddleware, getUser);
 router.delete("/:id", authMiddleware, destroyUser);
 router.put('/:id', authMiddleware, updateUser);
