@@ -1,26 +1,27 @@
 // src/helpers/emailHelper.js
 const nodemailer = require('nodemailer');
 
-// const transporter = nodemailer.createTransport({
-//     host: process.env.EMAIL_HOST,
-//     port: process.env.EMAIL_PORT,
-//     secure: false,
-//     auth: {
-//         user: process.env.EMAIL_USER,
-//         pass: process.env.EMAIL_PASS,
-//     },
-//     logger: true, 
-//     debug: true
-// });
-//https://ethereal.email Crea una cuenta y simula el envio de correo, no los manda pero en la misma pagina puedes ver lo que mandaron
 const transporter = nodemailer.createTransport({
-    host: 'smtp.ethereal.email',
-    port: 587,
+    host: process.env.EMAIL_HOST,
+    port: process.env.EMAIL_PORT,
+    secure: false,
     auth: {
-        user: 'emmalee.hermann@ethereal.email',
-        pass: '5hZrVK6EDMWxqZpXcu'
-    }
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+    },
+    logger: false, 
+    debug: false,
 });
+
+//https://ethereal.email Crea una cuenta y simula el envio de correo, no los manda pero en la misma pagina puedes ver lo que mandaron
+// const transporter = nodemailer.createTransport({
+//     host: 'smtp.ethereal.email',
+//     port: 587,
+//     auth: {
+//         user: 'emmalee.hermann@ethereal.email',
+//         pass: '5hZrVK6EDMWxqZpXcu'
+//     }
+// });
 
 const sendPasswordResetEmail = async (userEmail, resetToken) => {
     const resetUrl = `${process.env.FRONTEND_URL}/forgot-password?token=${resetToken}`;

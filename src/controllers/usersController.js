@@ -4,6 +4,7 @@ const { User, PasswordReset } = require('../models');
 const jwt = require('jsonwebtoken');
 const { sendPasswordResetEmail } = require('../helpers/emailHelper');
 const crypto = require('crypto');
+const { Op } = require('sequelize');
 
 /**
 * GET Users
@@ -180,17 +181,22 @@ const restoreUser = async (req, res) => {
     try {
         const { id } = req.params;
 
+        // Intentar restaurar el usuario
         const result = await User.restore({
             where: { id }
         });
 
         if (result === 0) {
-            return res.status(404).json({
-                code: 0,
-                message: 'Usuario no encontrado o ya está activo.'
+            // El usuario no se restauró. Esto significa:
+            // 1. El ID no existe en absoluto, O
+            // 2. El registro ya tiene deleted_at = NULL (ya está activo).
+            return res.status(404).json({ 
+                code: 0, 
+                message: 'No se pudo restaurar. Usuario no encontrado o ya estaba activo.' 
             });
         }
 
+        // Si result es 1 (o más), la restauración fue exitosa
         res.status(200).json({
             code: 1,
             message: 'Usuario restaurado exitosamente'
@@ -198,12 +204,14 @@ const restoreUser = async (req, res) => {
 
     } catch (error) {
         console.error('Error al restaurar el usuario:', error);
+        // Si tienes un error de conexión, este bloque lo atrapará
         res.status(500).json({
             code: 0,
             error: "Ha ocurrido un error inesperado. Intente nuevamente."
         });
     }
 };
+
 
 const loginUsers = async (req, res) => {
     try {
@@ -359,6 +367,34 @@ const resetPassword = async (req, res) => {
     }
 };
 
+const getDeletedUsers = async (req, res) => {
+    try {
+        const deletedUsers = await User.findAll({
+            // 1. CLAVE: Desactiva el filtro automático de soft delete
+            paranoid: false, 
+            
+            // 2. Filtra explícitamente solo los que tienen marca de tiempo
+            where: {
+                deleted_at: {
+                    [Op.ne]: null // <-- Op.ne significa "not equal to" (NO es igual a) NULL
+                }
+            },
+            attributes: ['id', 'first_name', 'last_name', 'email', 'deleted_at']
+        });
+
+        res.status(200).json({
+            code: 1,
+            users: deletedUsers,
+        });
+    } catch (error) {
+        console.error('Error al obtener los usuarios eliminados:', error);
+        res.status(500).json({
+            code: 0,
+            error: "Ha ocurrido un error inesperado. Intente nuevamente."
+        });
+    }
+};
+
 module.exports = {
   getUsers,
   getUser,
@@ -368,5 +404,6 @@ module.exports = {
   restoreUser,
   loginUsers,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  getDeletedUsers
 };

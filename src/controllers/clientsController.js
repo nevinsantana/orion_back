@@ -4,7 +4,7 @@ const { Client } = require('../models');
 const jwt = require('jsonwebtoken');
 const { sendPasswordResetEmail } = require('../helpers/emailHelper');
 const crypto = require('crypto');
-
+const { Op } = require('sequelize');
 /**
 * GET Coins
 */
@@ -235,6 +235,34 @@ const restoreClient = async (req, res) => {
     }
 };
 
+const getDeletedClients = async (req, res) => {
+    try {
+        const deletedClients = await Client.findAll({
+            // 1. Desactiva el filtro automático de soft delete
+            paranoid: false, 
+            
+            // 2. Filtra explícitamente solo los que tienen marca de tiempo
+            where: {
+                deleted_at: {
+                    [Op.ne]: null // Op.ne significa "not equal to" (NO es igual a) NULL
+                }
+            },
+            attributes: ['id', 'name', 'tax_address', 'contact_name', 'deleted_at']
+        });
+
+        res.status(200).json({
+            code: 1,
+            clients: deletedClients,
+        });
+    } catch (error) {
+        console.error('Error al obtener los clientes eliminados:', error);
+        res.status(500).json({
+            code: 0,
+            error: "Ha ocurrido un error inesperado. Intente nuevamente."
+        });
+    }
+};
+
 
 module.exports = {
   getClients,
@@ -243,4 +271,5 @@ module.exports = {
   destroyClient,
   updateClient,
   restoreClient,
+  getDeletedClients
 };

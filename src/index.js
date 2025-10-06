@@ -1,11 +1,11 @@
-const dotenv = require('dotenv');
+//const dotenv = require('dotenv');
 const fs = require('fs');
 
 // --- Carga de variables de entorno ---
-const envConfig = dotenv.parse(fs.readFileSync('.env'));
-for (const k in envConfig) {
- process.env[k] = envConfig[k];
-}
+//const envConfig = dotenv.parse(fs.readFileSync('.env'));
+// for (const k in envConfig) {
+//  process.env[k] = envConfig[k];
+// }
 
 const express = require('express');
 const cors = require('cors');

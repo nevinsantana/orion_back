@@ -4,7 +4,7 @@ const { Coin } = require('../models');
 const jwt = require('jsonwebtoken');
 const { sendPasswordResetEmail } = require('../helpers/emailHelper');
 const crypto = require('crypto');
-
+const { Op } = require('sequelize');
 /**
 * GET Coins
 */
@@ -216,6 +216,35 @@ const restoreCoin = async (req, res) => {
     }
 };
 
+const getDeletedCoins = async (req, res) => {
+    try {
+        const deletedCoins = await Coin.findAll({
+            // 1. Desactiva el filtro automático para que Sequelize vea los eliminados
+            paranoid: false, 
+            
+            // 2. Filtra explícitamente solo los que tienen marca de tiempo (deleted_at IS NOT NULL)
+            where: {
+                deleted_at: {
+                    [Op.ne]: null // Op.ne (not equal) a NULL
+                }
+            },
+            attributes: ['id', 'name', 'code', 'deleted_at']
+        });
+
+        res.status(200).json({
+            code: 1,
+            coins: deletedCoins,
+        });
+    } catch (error) {
+        console.error('Error al obtener las monedas eliminadas:', error);
+        res.status(500).json({
+            code: 0,
+            error: "Ha ocurrido un error inesperado. Intente nuevamente."
+        });
+    }
+};
+
+
 
 module.exports = {
   getCoins,
@@ -224,4 +253,5 @@ module.exports = {
   destroyCoin,
   updateCoin,
   restoreCoin,
+  getDeletedCoins
 };
