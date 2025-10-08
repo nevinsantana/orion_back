@@ -24,15 +24,39 @@ module.exports = {
       },
       contact_name: {
         type: Sequelize.STRING,
-        allowNull: false
+        allowNull: true
       },
       contact_email: {
         type: Sequelize.STRING,
-        allowNull: false
+        allowNull: true
       },
       contact_phone: {
         type: Sequelize.STRING,
         allowNull: true // <--- Configurado como NULO
+      },
+      uso_cfdi: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      regimen_fiscal_receptor: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      domicilio_fiscal_receptor: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      metodo_pago: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      forma_pago: {
+        type: Sequelize.STRING,
+        allowNull: true
+      },
+      email_recepcion_facturas: {
+        type: Sequelize.STRING,
+        allowNull: true
       },
       created_at: {
         allowNull: false,

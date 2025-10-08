@@ -11,7 +11,8 @@ const { Op } = require('sequelize');
 const getClients = async (req, res) => {
     try {
         const Clients = await Client.findAll({
-            attributes: ['id', 'name', 'tax_address', 'contact_name', 'contact_email', 'contact_phone']
+            attributes: ['id','name','tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
+            ]
         });
 
         res.status(200).json({
@@ -31,7 +32,8 @@ const getClient = async (req, res) => {
   try {
     const { id } = req.params;
     const Client_data = await Client.findByPk(id, {
-      attributes: ['id', 'name', 'tax_address', 'contact_name', 'contact_email', 'contact_phone']
+      attributes: ['id','name','tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
+            ]
     });
 
     if (!Client_data) {
@@ -247,7 +249,8 @@ const getDeletedClients = async (req, res) => {
                     [Op.ne]: null // Op.ne significa "not equal to" (NO es igual a) NULL
                 }
             },
-            attributes: ['id', 'name', 'tax_address', 'contact_name', 'deleted_at']
+            attributes: ['id','name','tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
+            ]
         });
 
         res.status(200).json({
