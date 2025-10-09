@@ -1,13 +1,11 @@
 // src/services/geminiService.js
 
 const { GoogleGenAI } = require('@google/genai');
-const path = require('path');
-const fs = require('fs'); // <--- ¡Importar FS aquí!
+const fs = require('fs'); // Necesario para leer el disco
+const path = require('path'); // Necesario para path.basename
 const ai = new GoogleGenAI({}); 
 
-/**
- * Función 1: Genera contenido basado SÓLO en texto (usada por aiController)
- */
+// ... (Función generateContent) ...
 const generateContent = async (promptText) => {
     try {
         const response = await ai.models.generateContent({
@@ -23,46 +21,44 @@ const generateContent = async (promptText) => {
     }
 };
 
-/**
- * Función 2: Analiza un PDF (usada por analyzePdfRoute)
- */
-const analyzePdf = async (filePath, mimeType, question) => {
-    let uploadedFile;
+
+const analyzePdf = async (filePath, mimeType, originalName, question) => { 
+    // No necesitamos 'uploadedFile' para la limpieza de Gemini aquí.
     try {
-        const fileContent = fs.readFileSync(filePath); 
-        console.log(filePath,
-                'application/pdf',
-                path.basename(filePath))
-        // 1. Cargar el archivo al servicio de Gemini
-        uploadedFile = await ai.files.upload({
-            file: filePath,
-            mimeType: 'application/pdf',
-            displayName: path.basename(filePath)
+        // 1. LEER EL ARCHIVO DEL DISCO A UN BUFFER
+        const fileContentBuffer = fs.readFileSync(filePath); 
+        
+        // 2. CODIFICAR el Buffer a Base64
+        const base64Data = fileContentBuffer.toString("base64");
+
+        // 3. Llamar a la API usando INLINE DATA (Base64)
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [
+                { role: "user", parts: [
+                    { 
+                        inlineData: { // <-- Usamos inlineData
+                            mimeType: 'application/pdf',
+                            data: base64Data // <-- Pasamos el Base64
+                        } 
+                    },
+                    { text: question }
+                ]}
+            ],
         });
 
-        // // 2. Llamar a la API con la referencia al archivo y la pregunta
-        // const response = await ai.models.generateContent({
-        //     model: 'gemini-2.5-flash',
-        //     contents: [
-        //         { role: "user", parts: [
-        //             { fileData: { mimeType: uploadedFile.mimeType, fileUri: uploadedFile.uri } },
-        //             { text: question }
-        //         ]}
-        //     ],
-        // });
-
-        // return response.text.trim();
+        // 4. Retornar la respuesta (la limpieza del archivo local es CRUCIAL en el controlador)
+        return response.text.trim();
 
     } catch (error) {
-        console.error(error);
+        console.error("Error al analizar el PDF con Gemini:", error);
         throw new Error("No se pudo analizar el PDF o conectar con la IA.");
     } finally {
-        // 3. Eliminar el archivo del servicio de Gemini
-        if (uploadedFile) {
-             await ai.files.delete({ name: uploadedFile.name });
-             console.log(`[GEMINI] Archivo temporal eliminado: ${uploadedFile.name}`);
+        // 2. Limpieza del archivo local del disco (¡DEBE ESTAR DESCOMENTADO!)
+        if (filePath && fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`[MULTER] Archivo local eliminado: ${filePath}`);
         }
-        // Nota: La eliminación del archivo local se maneja en el controlador
     }
 };
 
