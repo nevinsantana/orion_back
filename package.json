@@ -1,28 +1,38 @@
 {
-  "name": "back",
+  "name": "rak-orion",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "API del proyecto Orion de RAK para la gestión de clientes, facturación y procesos internos.",
+  "main": "src/index.js",
   "scripts": {
-    "start": "nodemon -r dotenv/config src/index.js",
+    "start": "node src/index.js",
+    "dev": "nodemon -r dotenv/config src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "api",
+    "node",
+    "express",
+    "sequelize",
+    "mysql",
+    "billing",
+    "rak",
+    "orion"
+  ],
+  "author": "RAK S.A. de C.V.",
   "license": "ISC",
-  "description": "",
   "dependencies": {
-    "@google/genai": "^1.22.0",
-    "bcryptjs": "^3.0.2",
+    "@google/generative-ai": "^0.15.0",
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "mysql2": "^3.14.5",
-    "nodemailer": "^7.0.6",
-    "sequelize": "^6.37.7",
-    "sequelize-cli": "^6.6.3"
+    "mysql2": "^3.10.3",
+    "nodemailer": "^7.0.9",
+    "sequelize": "^6.37.3",
+    "sequelize-cli": "^6.6.2"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.4"
   }
 }
