@@ -19,6 +19,7 @@ yarn-error.log*
 logs/
 *.log
 coverage/
+uploads/
 
 # Archivos de caché del SO / IDE
 ###################################

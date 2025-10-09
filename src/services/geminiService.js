@@ -1,29 +1,69 @@
 // src/services/geminiService.js
 
 const { GoogleGenAI } = require('@google/genai');
-
-// Inicializa el cliente. El SDK busca automáticamente la variable GEMINI_API_KEY
+const path = require('path');
+const fs = require('fs'); // <--- ¡Importar FS aquí!
 const ai = new GoogleGenAI({}); 
 
 /**
- * Genera una descripción o sugerencia basada en el texto de entrada.
- * @param {string} promptText - El texto que se le dará al modelo.
- * @returns {string} El texto generado por el modelo.
+ * Función 1: Genera contenido basado SÓLO en texto (usada por aiController)
  */
 const generateContent = async (promptText) => {
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', // Modelo rápido y eficiente
+            model: 'gemini-2.5-flash',
             contents: [{ role: "user", parts: [{ text: promptText }] }],
         });
 
-        // Retorna solo el texto generado
         return response.text.trim();
 
     } catch (error) {
-        console.error("Error al llamar a la API de Gemini:", error);
+        console.error("Error al llamar a la API de Gemini (Text Only):", error);
         throw new Error("No se pudo conectar con el servicio de IA.");
     }
 };
 
-module.exports = { generateContent };
+/**
+ * Función 2: Analiza un PDF (usada por analyzePdfRoute)
+ */
+const analyzePdf = async (filePath, mimeType, question) => {
+    let uploadedFile;
+    try {
+        const fileContent = fs.readFileSync(filePath); 
+        console.log(filePath,
+                'application/pdf',
+                path.basename(filePath))
+        // 1. Cargar el archivo al servicio de Gemini
+        uploadedFile = await ai.files.upload({
+            file: filePath,
+            mimeType: 'application/pdf',
+            displayName: path.basename(filePath)
+        });
+
+        // // 2. Llamar a la API con la referencia al archivo y la pregunta
+        // const response = await ai.models.generateContent({
+        //     model: 'gemini-2.5-flash',
+        //     contents: [
+        //         { role: "user", parts: [
+        //             { fileData: { mimeType: uploadedFile.mimeType, fileUri: uploadedFile.uri } },
+        //             { text: question }
+        //         ]}
+        //     ],
+        // });
+
+        // return response.text.trim();
+
+    } catch (error) {
+        console.error(error);
+        throw new Error("No se pudo analizar el PDF o conectar con la IA.");
+    } finally {
+        // 3. Eliminar el archivo del servicio de Gemini
+        if (uploadedFile) {
+             await ai.files.delete({ name: uploadedFile.name });
+             console.log(`[GEMINI] Archivo temporal eliminado: ${uploadedFile.name}`);
+        }
+        // Nota: La eliminación del archivo local se maneja en el controlador
+    }
+};
+
+module.exports = { generateContent, analyzePdf };
