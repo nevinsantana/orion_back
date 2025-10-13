@@ -16,8 +16,7 @@ const config = {
     database: process.env.DB_NAME,
     host: process.env.DB_HOST,
     dialect: 'mysql',
-    logging: true, // Lo activamos por defecto en desarrollo/local
-    // Añadir el logger de consola por defecto.
+    logging: console.log, // Lo activamos por defecto en desarrollo/local
     dialectOptions: { 
         decimalNumbers: true 
     }

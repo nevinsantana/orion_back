@@ -19,6 +19,10 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true,
       allowNull: false
     },
+    client_id: { // <-- Añadir solo el campo de tipo INTEGER
+      type: DataTypes.INTEGER.UNSIGNED,
+      allowNull: true,
+    },
     name: {
       type: DataTypes.STRING,
       allowNull: false
