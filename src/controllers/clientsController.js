@@ -11,7 +11,7 @@ const { Op } = require('sequelize');
 const getClients = async (req, res) => {
     try {
         const Clients = await Client.findAll({
-            attributes: ['id','name','tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
+            attributes: ['id','name','tax_address','tax_regime','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
             ]
         });
 
