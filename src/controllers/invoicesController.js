@@ -137,10 +137,9 @@ const getDeletedInvoices = async (req, res) => {
     }
 };
 
-// ... Asegúrate de exportar la nueva función ...
 module.exports = {
     getInvoices,
-    getInvoice, // <-- Exportar
+    getInvoice,
     postInvoice,
     updateInvoice,
     destroyInvoice,
