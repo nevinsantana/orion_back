@@ -53,21 +53,27 @@ const postInvoice = async (req, res) => {
 const updateInvoice = async (req, res) => {
     try {
         const { id } = req.params;
-        const [updatedRows] = await Invoice.update(req.body, {
-            where: { id },
-            returning: true // Devuelve los registros actualizados (PostgreSQL, pero buena práctica)
-        });
+        
+        const invoice = await Invoice.findByPk(id);
 
-        if (updatedRows === 0) {
+        if (!invoice) {
             return res.status(404).json({ code: 0, message: 'Factura no encontrada para actualizar.' });
         }
 
+        // 2. Actualizar las propiedades en memoria
+        invoice.set(req.body); 
+
+        // 3. Guardar en la base de datos
+        await invoice.save(); 
+
         res.status(200).json({ code: 1, message: 'Factura actualizada exitosamente' });
+        
     } catch (error) {
         console.error('Error al actualizar factura:', error);
         res.status(500).json({ code: 0, error: 'Fallo al actualizar la factura.' });
     }
 };
+
 
 const destroyInvoice = async (req, res) => {
     try {
