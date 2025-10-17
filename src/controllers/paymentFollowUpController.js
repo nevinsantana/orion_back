@@ -24,19 +24,18 @@ const getPaymentPortfolio = async (req, res) => {
  * Endpoint: /api/paymentFollowUp/:id
  */
 const getSingleFollowUp = async (req, res) => {
+  console.log("-----");
+  console.log("ENTRA INICIALMENTE");
+  console.log("-----");
   try {
     const { id } = req.params;
 
-    // Obtenemos la cartera completa y filtramos por ID (eficiente en un MVP)
-    const portfolio = await paymentFollowUpService.getFollowUpPortfolio();
-
-    // Usamos find para buscar el registro que coincida con el ID
-    const singleFollowUp = portfolio.find(
-      (item) => item.invoiceId === parseInt(id)
-    );
+    // --- CORRECCIÓN CRUCIAL: Llamar al servicio getSingleFollowUp ---
+    // Usamos el servicio diseñado para la consulta detallada, incluyendo includes.
+    const singleFollowUp = await paymentFollowUpService.getSingleFollowUp(id);
 
     if (!singleFollowUp) {
-      // Respuesta de error 404 (No encontrado)
+      // Si el servicio devuelve null (no encontrado), regresamos 404
       return response.error(res, "Seguimiento de factura no encontrado.", 404);
     }
 

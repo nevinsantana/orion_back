@@ -1,15 +1,21 @@
 'use strict';
-// Importamos bcryptjs para hashear la contraseña
 const bcrypt = require('bcryptjs');
 
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    // Definimos el hash de la contraseña 'abc123'. 
-    // Usamos un salt de 10, que es un estándar seguro.
+    // --- 1. LIMPIEZA CONDICIONAL (SOLO EN AMBIENTE LOCAL) ---
+    if (process.env.NODE_ENV === 'local') {
+      console.log('Ambiente local detectado. Limpiando tabla de usuarios para seeding...');
+      // Eliminamos todos los usuarios para evitar errores de unicidad
+      await queryInterface.bulkDelete('users', null, {});
+    }
+
+    // Definimos el hash de la contraseña 'abc123'
     const hashedPassword = await bcrypt.hash('abc123', 10);
     const date = new Date();
 
+    // --- 2. INSERCIÓN DE DATOS ---
     await queryInterface.bulkInsert('users', [{
       first_name: 'Nevin',
       last_name: 'Santana (Admin)',
@@ -21,7 +27,7 @@ module.exports = {
   },
 
   async down(queryInterface, Sequelize) {
-    // Comando para eliminar el usuario insertado al revertir el seeder
+    // Eliminamos el usuario al hacer revert
     await queryInterface.bulkDelete('users', {
       email: 'nevsantana@fabricadesoluciones.com'
     }, {});

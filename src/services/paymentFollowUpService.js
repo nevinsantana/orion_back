@@ -1,16 +1,20 @@
 const { Invoice, PaymentHistory, Client } = require('../models');
-const { Op, literal } = require('sequelize');
+const { Op, literal, fn, col } = require('sequelize');
 
-/**
- * Calcula el estatus y saldo pendiente de una factura.
- * @param {object} invoice - El objeto de la factura con los montos pagados y totales.
- * @returns {object} Un objeto con el saldo y estatus calculado.
- */
+// Función para calcular estatus (se mantiene igual)
 const calculateInvoiceStatus = (invoice) => {
-    // Definición de las reglas de negocio para el estatus
+    // La suma de pagos ahora viene de la asociación 'paymentHistory'
+    const paid_amount = invoice.paymentHistory 
+        ? invoice.paymentHistory.reduce((sum, payment) => sum + parseFloat(payment.amount), 0)
+        : 0;
+
+    const total_amount = parseFloat(invoice.total_amount);
+    
+    const saldoPendiente = total_amount - paid_amount;
     const dueDate = new Date(invoice.due_date);
     const today = new Date();
-    const isPaidInFull = invoice.total_amount <= (invoice.paid_amount || 0);
+    
+    const isPaidInFull = saldoPendiente <= 0;
 
     let status = 'Pendiente';
     
@@ -24,61 +28,101 @@ const calculateInvoiceStatus = (invoice) => {
 
     return {
         status: status,
-        saldoPendiente: Math.max(0, invoice.total_amount - (invoice.paid_amount || 0))
+        saldoPendiente: Math.max(0, saldoPendiente).toFixed(2),
+        paid_amount_sum: paid_amount.toFixed(2) // Agregamos la suma aquí
     };
 };
 
-/**
- * Servicio para obtener la cartera de facturas con sus estatus de seguimiento.
- * @returns {Array<object>} Lista de facturas con estatus de pago.
- */
+// ... [getFollowUpPortfolio se mantiene igual usando la subconsulta literal] ...
 const getFollowUpPortfolio = async () => {
-    // 1. Obtener la suma total de pagos por factura (Usando Sequelize literal para eficiencia)
-    const invoicesWithPayments = await Invoice.findAll({
+    // Este método usa la subconsulta literal porque funciona bien en findAll y es eficiente para el listado general
+    // ... [código de getFollowUpPortfolio omitido] ...
+    const invoices = await Invoice.findAll({
         attributes: [
             'id', 
-            'clientId', 
-            'total_amount', // Campo necesario del modelo Invoice
-            'due_date', // Campo necesario del modelo Invoice
+            ['client_id', 'clientId'], 
+            'total_amount', 
+            'due_date', 
             'metodo_pago',
-            // Calcula el monto pagado sumando todos los registros de PaymentHistory asociados
-            [literal('(SELECT SUM(amount) FROM payment_history WHERE payment_history.invoice_id = Invoice.id)'), 'paid_amount'] 
+            [
+                literal('(SELECT SUM(amount) FROM payment_history WHERE payment_history.invoice_id = Invoice.id)'),
+                'paid_amount'
+            ]
         ],
         include: [{
             model: Client,
             as: 'client',
             attributes: ['id', 'name', 'contact_email']
-        }]
+        }],
+        where: { deleted_at: { [Op.is]: null } }
     });
 
-    // 2. Procesar cada factura para calcular el saldo y el estatus
-    const portfolio = invoicesWithPayments.map(invoice => {
-        const data = invoice.toJSON();
-        
-        // Convertir a número para cálculos precisos (ya que vienen de DECIMAL en DB)
-        data.total_amount = parseFloat(data.total_amount);
-        data.paid_amount = parseFloat(data.paid_amount || 0);
-        
-        const { status, saldoPendiente } = calculateInvoiceStatus(data);
-        
+    const portfolio = invoices.map(invoice => {
+        const rawInvoice = invoice.get({ plain: true });
+        // Mapeamos el campo 'paid_amount' a 'paid_amount_sum' para usar el cálculo
+        rawInvoice.paid_amount_sum = rawInvoice.paid_amount; 
+        const calculatedStatus = calculateInvoiceStatus(rawInvoice);
+
         return {
-            invoiceId: data.id,
-            clientName: data.client.name,
-            clientEmail: data.client.contact_email,
-            metodoPago: data.metodo_pago,
-            total: data.total_amount,
-            pagado: data.paid_amount,
-            saldoPendiente: parseFloat(saldoPendiente.toFixed(2)),
-            fechaVencimiento: data.due_date,
-            estatus: status,
-            // Bandera de acción: Indica si se necesita una notificación (por vencer o vencida)
-            necesitaNotificacion: status === 'Por Vencer (7 días)' || status === 'Vencida'
+            ...rawInvoice,
+            ...calculatedStatus,
+            paid_amount: undefined 
         };
     });
 
     return portfolio;
 };
 
+/**
+ * Obtiene el seguimiento detallado de una sola factura. (SOLUCIÓN FINAL: Sin Subconsulta Literal)
+ */
+const getSingleFollowUp = async (id) => {
+    // 1. Buscamos la factura con TODOS los includes
+    const invoice = await Invoice.findByPk(id, {
+        attributes: [
+            'id', 
+            ['client_id', 'clientId'],
+            'total_amount', 
+            'due_date', 
+            'metodo_pago'
+            // NOTA: Eliminamos la subconsulta literal de paid_amount_sum de aquí.
+        ],
+        include: [
+            {
+                model: Client,
+                as: 'client',
+                attributes: ['id', 'name', 'contact_email']
+            },
+            {
+                model: PaymentHistory,
+                as: 'paymentHistory', 
+                attributes: ['paymentDate', 'amount', 'paymentMethod', 'description'],
+                required: false 
+            }
+        ],
+    });
+
+    // Si la factura no existe, regresamos null (y el controlador devuelve 404)
+    if (!invoice) {
+        console.error(`[DEBUG SERVICE] Factura ID ${id} no encontrada después del findByPk.`);
+        return null;
+    }
+
+    const rawInvoice = invoice.get({ plain: true });
+    
+    // 2. Calculamos el estatus en memoria (en JS)
+    const calculated = calculateInvoiceStatus(rawInvoice);
+
+    return {
+        ...rawInvoice,
+        ...calculated,
+        paymentHistory: rawInvoice.paymentHistory, // Incluye la lista de pagos
+        paid_amount_sum: undefined // Limpiamos el campo técnico
+    };
+};
+
+
 module.exports = {
-    getFollowUpPortfolio
+    getFollowUpPortfolio,
+    getSingleFollowUp
 };
