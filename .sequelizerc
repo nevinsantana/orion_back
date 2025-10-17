@@ -1,0 +1,13 @@
+const path = require('path');
+// 1. Cargamos las variables de entorno antes de que Sequelize lea la configuración
+require('dotenv').config({ path: path.resolve(__dirname, '.env') }); 
+
+module.exports = {
+  // 2. Apuntamos a tu archivo config.js
+  'config': path.resolve('src', 'config', 'config.js'),
+  
+  // 3. Apuntamos a las rutas de tus modelos y migraciones
+  'migrations-path': path.resolve('src', 'migrations'),
+  'models-path': path.resolve('src', 'models'),
+  'seeders-path': path.resolve('src', 'seeders')
+};
