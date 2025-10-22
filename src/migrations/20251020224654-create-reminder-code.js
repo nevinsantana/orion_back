@@ -7,15 +7,21 @@ module.exports = {
         allowNull: false,
         autoIncrement: true,
         primaryKey: true,
-        type: Sequelize.INTEGER.UNSIGNED // Usar UNSIGNED para IDs
+        type: Sequelize.INTEGER.UNSIGNED
       },
-      id_invoice: {
+      id_invoice: { // Columna de Luis
         type: Sequelize.INTEGER.UNSIGNED,
         allowNull: false,
-        // (Omitimos 'references' para no forzar la unión a nivel de DB)
+        unique: true, // CLAVE: Solo un código de recordatorio activo por factura
+        references: { // CRUCIAL: Llave foránea para la integridad
+          model: 'invoices', // Nombre de la tabla de facturas
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
       },
       code: {
-        type: Sequelize.STRING(255),
+        type: Sequelize.STRING(32), // Tamaño optimizado para tokens/UUID
         allowNull: false,
         unique: true
       },
@@ -24,9 +30,14 @@ module.exports = {
         allowNull: false,
         defaultValue: false
       },
-      image: {
+      image: { // Mantenemos el nombre 'image'
         type: Sequelize.STRING(500),
         allowNull: true
+      },
+      status: { // Nuevo campo para el flujo de confirmación de pago
+        type: Sequelize.ENUM('PENDING', 'CONFIRMED', 'REJECTED'),
+        defaultValue: 'PENDING',
+        allowNull: false
       },
       created_at: {
         allowNull: false,
