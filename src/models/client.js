@@ -5,11 +5,26 @@ const {
 module.exports = (sequelize, DataTypes) => {
   class Client extends Model {
     static associate(models) {
-      // Define asociaciones si el cliente tiene facturas, etc.
+      // 1. Un Cliente tiene muchas Facturas (Invoice)
+      Client.hasMany(models.Invoice, {
+        foreignKey: 'client_id', // El nombre que usamos en la migración
+        as: 'invoices'
+      });
     }
   }
   Client.init({
+    id: {
+      type: DataTypes.INTEGER.UNSIGNED, // Importante para la FK con Invoices
+      primaryKey: true,
+      autoIncrement: true,
+      allowNull: false
+    },
     name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    },
+    rfc: { // AGREGADO: Campo RFC, crucial para la facturación
       type: DataTypes.STRING,
       allowNull: false,
       unique: true
@@ -18,10 +33,9 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false
     },
-    // --- Campos de Contacto ---
     contact_name: {
       type: DataTypes.STRING,
-      allowNull: true // Asumo que el nombre de contacto es opcional si el correo y teléfono lo son.
+      allowNull: true
     },
     contact_email: {
       type: DataTypes.STRING,
@@ -29,10 +43,9 @@ module.exports = (sequelize, DataTypes) => {
     },
     contact_phone: {
       type: DataTypes.STRING,
-      allowNull: true // Este campo permite valores nulos
+      allowNull: true
     },
-    // --- Campos Fiscales Adicionales (Nuevos) ---
-    tax_regime: { // Este era un campo anterior, pero lo mantengo aquí por orden
+    tax_regime: {
       type: DataTypes.STRING,
       allowNull: false
     },
@@ -60,15 +73,13 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true
     }
-    // NOTA: No incluyas created_at, updated_at, deleted_at aquí.
-    // Sequelize los maneja automáticamente con las opciones de abajo.
   }, {
     sequelize,
     modelName: 'Client',
     tableName: 'clients',
     timestamps: true,
     paranoid: true,
-    underscored: true // Clave para usar snake_case en la BD
+    underscored: true
   });
   return Client;
 };

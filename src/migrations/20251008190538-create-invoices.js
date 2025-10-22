@@ -9,6 +9,27 @@ module.exports = {
         primaryKey: true,
         type: Sequelize.INTEGER.UNSIGNED
       },
+      // --- NUEVOS CAMPOS DE RELACIÓN Y SEGUIMIENTO ---
+      client_id: { // Llave Foránea a la tabla 'clients'
+        type: Sequelize.INTEGER.UNSIGNED,
+        allowNull: false,
+        references: {
+          model: 'clients',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      total_amount: { // Campo: Monto total de la factura (necesario para calcular saldo)
+        type: Sequelize.DECIMAL(10, 2),
+        allowNull: false
+      },
+      due_date: { // Campo: Fecha de vencimiento (necesario para el seguimiento)
+        type: Sequelize.DATE,
+        allowNull: false
+      },
+      
+      // --- CAMPOS REDUNDANTES/SNAPSHOTS (Se mantienen por el CFDI) ---
       name: {
         type: Sequelize.STRING,
         allowNull: false
@@ -61,6 +82,8 @@ module.exports = {
         type: Sequelize.STRING,
         allowNull: true
       },
+      
+      // --- CAMPOS DE CONTROL ---
       created_at: {
         allowNull: false,
         type: Sequelize.DATE

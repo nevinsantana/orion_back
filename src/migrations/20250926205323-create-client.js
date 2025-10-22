@@ -7,10 +7,15 @@ module.exports = {
         allowNull: false,
         autoIncrement: true,
         primaryKey: true,
-        type: Sequelize.INTEGER
+        type: Sequelize.INTEGER.UNSIGNED // CORRECCIÓN: Debe ser UNSIGNED
       },
       name: {
         type: Sequelize.STRING,
+        allowNull: false,
+        unique: true
+      },
+      rfc: { // AGREGADO CRÍTICO: Registro Federal de Contribuyentes
+        type: Sequelize.STRING(13),
         allowNull: false,
         unique: true
       },
@@ -32,7 +37,7 @@ module.exports = {
       },
       contact_phone: {
         type: Sequelize.STRING,
-        allowNull: true // <--- Configurado como NULO
+        allowNull: true
       },
       uso_cfdi: {
         type: Sequelize.STRING,

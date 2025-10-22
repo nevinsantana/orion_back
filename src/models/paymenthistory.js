@@ -1,20 +1,21 @@
-"use strict";
+'use strict';
 const { Model } = require("sequelize");
 module.exports = (sequelize, DataTypes) => {
   class PaymentHistory extends Model {
     static associate(models) {
-      // Definimos la asociación con el modelo de Facturas (Invoices)
+      // Definimos la asociación belongsTo (correcta)
       PaymentHistory.belongsTo(models.Invoice, {
-        foreignKey: "invoiceId",
-        as: "invoice", // Alias para la asociación
+        foreignKey: "invoice_id", // Ya está en snake_case
+        as: "invoice",
       });
     }
   }
   PaymentHistory.init(
     {
       invoiceId: {
-        type: DataTypes.INTEGER.UNSIGNED, // Tipo de dato que coincide con invoices.id
+        type: DataTypes.INTEGER.UNSIGNED,
         allowNull: false,
+        field: 'invoice_id', // <--- CORRECCIÓN CLAVE: Mapea a la columna de la DB
         references: {
           model: "invoices",
           key: "id",
@@ -39,11 +40,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "PaymentHistory", // Nombre de la clase en camelCase
-      tableName: "payment_history", // Nombre de la tabla en snake_case
-      timestamps: true, // Para created_at y updated_at
-      paranoid: true, // Para deleted_at (soft delete)
-      underscored: true, // Clave para usar nombres de columna snake_case
+      modelName: "PaymentHistory",
+      tableName: "payment_history",
+      timestamps: true,
+      paranoid: true,
+      underscored: true,
     }
   );
   return PaymentHistory;
