@@ -4,15 +4,13 @@ module.exports = (sequelize, DataTypes) => {
   class ReminderCode extends Model {
     static associate(models) {
       // 1. Un Código de Recordatorio pertenece a una Factura (Invoice)
+      // Nota: Aunque la migración de Luis no tiene REFERENCES, este belongsTo es necesario
+      // y se asume que la FK está implícita o creada.
       ReminderCode.belongsTo(models.Invoice, {
-        foreignKey: 'id_invoice', // Columna de la migración de Luis
+        foreignKey: 'id_invoice', 
         as: 'invoice'
       });
-      // 2. Un Código de Recordatorio es confirmado por un Usuario (User)
-      ReminderCode.belongsTo(models.User, {
-        foreignKey: 'confirmed_by_user_id', 
-        as: 'confirmer'
-      });
+      // 2. Un Código de Recordatorio es confirmado por un Usuario (User) - OMITIDO
     }
   }
   ReminderCode.init({
@@ -20,15 +18,15 @@ module.exports = (sequelize, DataTypes) => {
     invoiceId: { 
       type: DataTypes.INTEGER.UNSIGNED,
       allowNull: false,
-      field: 'id_invoice', // <--- Mapeo al nombre de columna de Luis
-      unique: true, // Heredado de la migración
+      field: 'id_invoice', // Mapeo al nombre de columna de Luis
+      unique: true, // Asumido de la migración para evitar duplicados
       references: {
         model: 'invoices',
         key: 'id',
       }
     },
     code: {
-      type: DataTypes.STRING(32), // Usamos 32 para consistencia con tokens
+      type: DataTypes.STRING(255), // Usamos 255 para coincidir con la migración de Luis
       allowNull: false,
       unique: true
     },
@@ -40,20 +38,9 @@ module.exports = (sequelize, DataTypes) => {
     imageUrl: { // Mapeo de 'image' de la BD a 'imageUrl' en JS
       type: DataTypes.STRING(500),
       allowNull: true,
-      field: 'image'
-    },
-    // Campo que controla quién confirmó el pago (necesario para el flujo de Luis)
-    confirmedByUserId: { 
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      field: 'confirmed_by_user_id'
-    },
-    // Campo que controla el estado del comprobante (PENDING, CONFIRMED, REJECTED)
-    status: { 
-      type: DataTypes.ENUM('PENDING', 'CONFIRMED', 'REJECTED'),
-      defaultValue: 'PENDING',
-      allowNull: false
+      field: 'image' // Nombre exacto de la columna en la migración de Luis
     }
+    // Omitimos los campos 'status' y 'confirmed_by_user_id' ya que NO están en la migración de Luis.
   }, {
     sequelize,
     modelName: 'ReminderCode',

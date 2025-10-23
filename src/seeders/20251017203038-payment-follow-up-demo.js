@@ -6,15 +6,16 @@ module.exports = {
   async up(queryInterface, Sequelize) {
     const today = new Date("2025-10-17T00:00:00Z");
 
-    // --- 1. DATOS DE CLIENTES, FACTURAS Y PAGOS (Asumidos correctos) ---
+    // --- 1. DATOS DE CLIENTES ---
+    // ASIGNAMOS TUS CORREOS DE PRUEBA A LOS CLIENTES
     await queryInterface.bulkInsert(
       "clients",
       [
         {
           id: 1,
-          name: "Cliente 1: Vencido",
+          name: "Cliente 1: Vencido (Nevin)",
           rfc: "C1V100101XYZ",
-          contact_email: "juan@test.com",
+          contact_email: "nevsantana@fabricadesoluciones.com",
           tax_address: "Addr C1",
           tax_regime: "601",
           uso_cfdi: "G03",
@@ -27,9 +28,9 @@ module.exports = {
         },
         {
           id: 2,
-          name: "Cliente 2: Por Vencer",
+          name: "Cliente 2: Por Vencer (Gmail)",
           rfc: "C2V200202ABC",
-          contact_email: "ana@test.com",
+          contact_email: "roll.9330@gmail.com",
           tax_address: "Addr C2",
           tax_regime: "601",
           uso_cfdi: "G03",
@@ -42,9 +43,9 @@ module.exports = {
         },
         {
           id: 3,
-          name: "Cliente 3: Pagado",
+          name: "Cliente 3: Pagado (Hotmail)",
           rfc: "C3V300303DEF",
-          contact_email: "luis@test.com",
+          contact_email: "roll.93@hotmail.com",
           tax_address: "Addr C3",
           tax_regime: "603",
           uso_cfdi: "G03",
@@ -59,15 +60,17 @@ module.exports = {
       { ignoreDuplicates: true }
     );
 
+    // --- 2. DATOS DE FACTURAS ---
     await queryInterface.bulkInsert(
       "invoices",
       [
+        // Factura 1 (Vencida) -> Va a Nevin (Urgente)
         {
           id: 1,
           client_id: 1,
           total_amount: 15000.0,
           due_date: new Date("2025-10-16"),
-          name: "Cliente 1: Vencido",
+          name: "Factura Vencida",
           rfc: "C1V100101XYZ",
           tax_address: "Addr C1",
           tax_regime: "601",
@@ -77,14 +80,15 @@ module.exports = {
           metodo_pago: "PPD",
           created_at: today,
           updated_at: today,
-          email_recepcion_facturas: "juan@test.com",
+          email_recepcion_facturas: "nevsantana@fabricadesoluciones.com",
         },
+        // Factura 2 (Por Vencer) -> Va a Gmail (Aviso)
         {
           id: 2,
           client_id: 2,
           total_amount: 20000.0,
           due_date: new Date("2025-10-18"),
-          name: "Cliente 2: Por Vencer",
+          name: "Factura Por Vencer",
           rfc: "C2V200202ABC",
           tax_address: "Addr C2",
           tax_regime: "601",
@@ -94,14 +98,15 @@ module.exports = {
           metodo_pago: "PPD",
           created_at: today,
           updated_at: today,
-          email_recepcion_facturas: "ana@test.com",
+          email_recepcion_facturas: "roll.9330@gmail.com",
         },
+        // Factura 3 (Pendiente, vence en 10 días) -> Va a Hotmail (No se envía, solo para verificar el filtro)
         {
           id: 3,
           client_id: 3,
           total_amount: 5000.0,
           due_date: new Date("2025-10-27"),
-          name: "Cliente 3: Pendiente",
+          name: "Factura Pendiente",
           rfc: "C3V300303DEF",
           tax_address: "Addr C3",
           tax_regime: "603",
@@ -111,14 +116,15 @@ module.exports = {
           metodo_pago: "PUE",
           created_at: today,
           updated_at: today,
-          email_recepcion_facturas: "luis@test.com",
+          email_recepcion_facturas: "roll.93@hotmail.com",
         },
+        // Factura 4 (Pagada) -> Va a Hotmail (No se envía)
         {
           id: 4,
           client_id: 3,
           total_amount: 1000.0,
           due_date: new Date("2025-09-01"),
-          name: "Cliente 3: Pagada",
+          name: "Factura Pagada",
           rfc: "C3V300303DEF",
           tax_address: "Addr C3",
           tax_regime: "603",
@@ -128,12 +134,13 @@ module.exports = {
           metodo_pago: "PUE",
           created_at: today,
           updated_at: today,
-          email_recepcion_facturas: "luis@test.com",
+          email_recepcion_facturas: "roll.93@hotmail.com",
         },
       ],
       { ignoreDuplicates: true }
     );
 
+    // --- 3. DATOS DE PAGOS (Se mantienen igual) ---
     await queryInterface.bulkInsert(
       "payment_history",
       [
@@ -159,8 +166,7 @@ module.exports = {
       { ignoreDuplicates: true }
     );
 
-    // --- 4. DATOS DE CÓDIGOS DE RECORDATORIO (reminder_codes) ---
-    // ESTA VERSIÓN COINCIDE CON LA MIGRACIÓN DE LUIS (NO status, NO confirmed_by_user_id)
+    // --- 4. CÓDIGOS DE RECORDATORIO (Se mantienen para simulación de reutilización) ---
     await queryInterface.bulkInsert(
       "reminder_codes",
       [
