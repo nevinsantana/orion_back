@@ -1,11 +1,10 @@
 const nodemailer = require("nodemailer");
 
 // --- TRANSPORTER: Configuración Global de Nodemailer ---
-// Nota: La variable 'transporter' está disponible para todas las funciones en este módulo.
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_PORT,
-  secure: false,
+  secure: false, // Usar true para el puerto 465, false para 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -13,6 +12,19 @@ const transporter = nodemailer.createTransport({
   logger: false,
   debug: false,
 });
+
+/**
+ * Envía un correo genérico con el asunto y cuerpo HTML definidos.
+ * (Función útil para errores o notificaciones simples).
+ */
+const sendEmail = async (toEmail, subject, htmlBody) => {
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM,
+    to: toEmail,
+    subject: subject,
+    html: htmlBody,
+  });
+};
 
 /**
  * Envía el correo de restablecimiento de contraseña.
@@ -120,7 +132,6 @@ const sendPaymentReminderEmail = async ({
   };
 
   try {
-    // CORRECCIÓN: Usamos directamente la variable 'transporter'
     await transporter.sendMail(mailOptions);
   } catch (error) {
     console.error(
@@ -131,4 +142,4 @@ const sendPaymentReminderEmail = async ({
   }
 };
 
-module.exports = { sendPasswordResetEmail, sendPaymentReminderEmail };
+module.exports = { sendPasswordResetEmail, sendPaymentReminderEmail, sendEmail };
