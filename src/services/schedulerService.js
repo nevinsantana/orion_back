@@ -48,7 +48,6 @@ const createReminderCode = async (invoice) => {
  * Función que define y arranca todos los cronjobs del proyecto.
  */
 const startScheduler = () => {
-    
     console.log(`[CRONJOB] Programando recordatorios con la expresión: ${CRON_EXPRESSION}`);
     
     // Usamos la variable de entorno CRON_EXPRESSION
