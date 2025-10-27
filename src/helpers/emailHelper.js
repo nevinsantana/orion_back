@@ -4,7 +4,7 @@ const nodemailer = require("nodemailer");
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_PORT,
-  secure: false, // Usar true para el puerto 465, false para 587
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -12,19 +12,6 @@ const transporter = nodemailer.createTransport({
   logger: false,
   debug: false,
 });
-
-/**
- * Envía un correo genérico con el asunto y cuerpo HTML definidos.
- * (Función útil para errores o notificaciones simples).
- */
-const sendEmail = async (toEmail, subject, htmlBody) => {
-  await transporter.sendMail({
-    from: process.env.EMAIL_FROM,
-    to: toEmail,
-    subject: subject,
-    html: htmlBody,
-  });
-};
 
 /**
  * Envía el correo de restablecimiento de contraseña.
@@ -94,7 +81,9 @@ const sendPaymentReminderEmail = async ({
     html: `
             <div style="font-family: Arial, sans-serif; line-height: 1.6;">
                 <h2 style="color: #0d47a1;">Recordatorio de Pago de Factura</h2>
-                <p>Estimado(a) **${clientName}** (${invoice.client_id}),</p>
+                
+                <!-- CORRECCIÓN FINAL: Solo se usa el nombre del cliente -->
+                <p>Estimado(a) **${clientName}**:</p> 
 
                 <p>Este es un recordatorio automático sobre una factura pendiente con **RAK Orion**.</p>
                 
@@ -142,4 +131,4 @@ const sendPaymentReminderEmail = async ({
   }
 };
 
-module.exports = { sendPasswordResetEmail, sendPaymentReminderEmail, sendEmail };
+module.exports = { sendPasswordResetEmail, sendPaymentReminderEmail };
