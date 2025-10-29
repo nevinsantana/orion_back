@@ -1,6 +1,7 @@
 const nodemailer = require("nodemailer");
 
 // --- TRANSPORTER: Configuración Global de Nodemailer ---
+// Nota: Las credenciales se leen de process.env
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_PORT,
@@ -82,7 +83,6 @@ const sendPaymentReminderEmail = async ({
             <div style="font-family: Arial, sans-serif; line-height: 1.6;">
                 <h2 style="color: #0d47a1;">Recordatorio de Pago de Factura</h2>
                 
-                <!-- CORRECCIÓN FINAL: Solo se usa el nombre del cliente -->
                 <p>Estimado(a) **${clientName}**:</p> 
 
                 <p>Este es un recordatorio automático sobre una factura pendiente con **RAK Orion**.</p>
@@ -101,17 +101,13 @@ const sendPaymentReminderEmail = async ({
                 </ul>
 
                 <h3 style="color: #0d47a1;">Confirmación de Pago (¡Paso Importante!)</h3>
-                <p>Una vez realizado tu pago, por favor utiliza tu **Código de Comprobante Único** para subir tu recibo:</p>
+                <p>Una vez realizado tu pago, por favor haz clic en el botón de abajo para subir tu recibo:</p>
                 
-                <div style="background-color: #f0f0f0; padding: 15px; border-radius: 5px; text-align: center;">
-                    <p style="font-size: 18px; margin: 0;">Tu Código de Comprobante es:</p>
-                    <p style="font-size: 24px; font-weight: bold; color: #0d47a1; margin-top: 5px;">${reminderCode}</p>
-                </div>
-
-                <p style="margin-top: 20px;">Haz clic en el siguiente botón o enlace para subir tu comprobante de pago:</p>
+                <p style="margin-top: 20px;">
+                    <a href="${confirmationUrl}" style="background-color: #0d47a1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Subir Comprobante Ahora</a>
+                </p>
                 
-                <a href="${confirmationUrl}" style="background-color: #0d47a1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Subir Comprobante Ahora</a>
-                
+                <!-- Mantenemos el enlace directo para propósitos de debugging y texto plano -->
                 <p style="margin-top: 20px;"><small>Enlace directo: <a href="${confirmationUrl}">${confirmationUrl}</a></small></p>
 
                 <p>Gracias por tu pronta atención.</p>
