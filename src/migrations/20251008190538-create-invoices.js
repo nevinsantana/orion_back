@@ -2,22 +2,41 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('clients', {
+    await queryInterface.createTable('invoices', {
       id: {
         allowNull: false,
         autoIncrement: true,
         primaryKey: true,
-        type: Sequelize.INTEGER.UNSIGNED // CORRECCIÓN: Debe ser UNSIGNED
+        type: Sequelize.INTEGER.UNSIGNED
       },
+      // --- NUEVOS CAMPOS DE RELACIÓN Y SEGUIMIENTO ---
+      client_id: { // Llave Foránea a la tabla 'clients'
+        type: Sequelize.INTEGER.UNSIGNED,
+        allowNull: false,
+        references: {
+          model: 'clients',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      total_amount: { // Campo: Monto total de la factura (necesario para calcular saldo)
+        type: Sequelize.DECIMAL(10, 2),
+        allowNull: false
+      },
+      due_date: { // Campo: Fecha de vencimiento (necesario para el seguimiento)
+        type: Sequelize.DATE,
+        allowNull: false
+      },
+      
+      // --- CAMPOS REDUNDANTES/SNAPSHOTS (Se mantienen por el CFDI) ---
       name: {
         type: Sequelize.STRING,
-        allowNull: false,
-        unique: true
+        allowNull: false
       },
-      rfc: { // AGREGADO CRÍTICO: Registro Federal de Contribuyentes
-        type: Sequelize.STRING(13),
-        allowNull: false,
-        unique: true
+      rfc: {
+        type: Sequelize.STRING,
+        allowNull: false
       },
       tax_address: {
         type: Sequelize.STRING,
@@ -63,6 +82,8 @@ module.exports = {
         type: Sequelize.STRING,
         allowNull: true
       },
+      
+      // --- CAMPOS DE CONTROL ---
       created_at: {
         allowNull: false,
         type: Sequelize.DATE
@@ -74,13 +95,9 @@ module.exports = {
       deleted_at: {
         type: Sequelize.DATE
       }
-    }, {
-      tableName: 'clients',
-      timestamps: true,
-      paranoid: true
     });
   },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('clients');
+    await queryInterface.dropTable('invoices');
   }
 };

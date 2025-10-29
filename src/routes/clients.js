@@ -9,10 +9,12 @@ const {
   destroyClient,
   updateClient,
   restoreClient,
+  getDeletedClients
 } = require("../controllers/ClientsController");
 
 
 router.get("/", authMiddleware, getClients); 
+router.get("/deleted", authMiddleware, getDeletedClients); 
 router.get("/:id", authMiddleware, getClient);
 router.delete("/:id", authMiddleware, destroyClient);
 router.put('/:id', authMiddleware, updateClient);

@@ -12,14 +12,16 @@ const {
   restoreUser,
   loginUsers,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  getDeletedUsers
 } = require("../controllers/usersController");
 
 router.post("/login", loginUsers);
 router.post("/forgot-password", forgotPassword);
 
-router.get("/", getUsers); 
-router.post("/", postUser);
+router.get("/", authMiddleware, getUsers); 
+router.get("/deleted", authMiddleware, getDeletedUsers); 
+router.post("/", authMiddleware, postUser);
 router.get("/:id", authMiddleware, getUser);
 router.delete("/:id", authMiddleware, destroyUser);
 router.put('/:id', authMiddleware, updateUser);

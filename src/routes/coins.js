@@ -9,10 +9,12 @@ const {
   destroyCoin,
   updateCoin,
   restoreCoin,
+  getDeletedCoins
 } = require("../controllers/coinsController");
 
 
 router.get("/", authMiddleware, getCoins); 
+router.get("/deleted", authMiddleware, getDeletedCoins); 
 router.get("/:id", authMiddleware, getCoin);
 router.delete("/:id", authMiddleware, destroyCoin);
 router.put('/:id', authMiddleware, updateCoin);

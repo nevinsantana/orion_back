@@ -1,39 +1,35 @@
-# Directorios de dependencias
+# Dependencias y artefactos de Node
 node_modules/
-# Archivos de depuración
+package-lock.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-# Logs del sistema
-logs/
-*.log
-# Archivos de caché del SO
-.DS_Store
-Thumbs.db
-# Archivos y carpetas del editor/IDE
-.vscode/
-.idea/
-# Archivos generados automáticamente
-dist/
-build/
-# Variables de entorno
+
+# Variables de Entorno y Credenciales
+###################################
+# Evita subir CUALQUIER archivo con credenciales de entorno.
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-# Archivos de caché específicos de Node
-.next/
-# Miniaturas de VS Code
-.vscode-insiders/
-# Archivos de credenciales o claves
+.env.*
 *.pem
 *.key
-# Certificados SSL
-cert/
-# Otros archivos generados
+/cert/
+
+# Archivos de Logs y reportes
+logs/
+*.log
 coverage/
-*.tgz
+uploads/
+
+# Archivos de caché del SO / IDE
+###################################
 .DS_Store
-.env
+Thumbs.db
+.vscode/
+.vscode-insiders/
+.idea/
+
+# Archivos de compilación y empaquetamiento
+dist/
+build/
+*.tgz

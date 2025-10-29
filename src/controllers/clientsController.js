@@ -4,14 +4,15 @@ const { Client } = require('../models');
 const jwt = require('jsonwebtoken');
 const { sendPasswordResetEmail } = require('../helpers/emailHelper');
 const crypto = require('crypto');
-
+const { Op } = require('sequelize');
 /**
 * GET Coins
 */
 const getClients = async (req, res) => {
     try {
         const Clients = await Client.findAll({
-            attributes: ['id', 'name', 'tax_address', 'contact_name', 'contact_email', 'contact_phone']
+            attributes: ['id','name', 'rfc', 'tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
+            ]
         });
 
         res.status(200).json({
@@ -31,7 +32,8 @@ const getClient = async (req, res) => {
   try {
     const { id } = req.params;
     const Client_data = await Client.findByPk(id, {
-      attributes: ['id', 'name', 'tax_address', 'contact_name', 'contact_email', 'contact_phone']
+      attributes: ['id','name', 'rfc', 'tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
+            ]
     });
 
     if (!Client_data) {
@@ -50,67 +52,42 @@ const getClient = async (req, res) => {
 
 const postClient = async (req, res) => {
     try {
-            const { 
-                name, 
-                tax_address, 
-                tax_regime, 
-                contact_name, 
-                contact_email, 
-                contact_phone 
-            } = req.body;
+        // 1. Simplificar: Pasar el cuerpo COMPLETO directamente a Client.create()
+        const newClient = await Client.create(req.body);
 
-            // 1. Validación de campos obligatorios
-            if (!name || !tax_address || !tax_regime || !contact_name || !contact_email) {
-                return res.status(400).json({
-                    code: 0,
-                    message: 'Faltan campos obligatorios. Asegúrate de incluir: name, tax_address, tax_regime, contact_name, y contact_email.'
-                });
-            }
+        // 2. Devolver la respuesta de éxito (201 Created)
+        res.status(201).json({
+            code: 1,
+            message: 'Cliente creado exitosamente',
+            client: newClient
+        });
 
-            // 2. Crear el nuevo cliente
-            const newClient = await Client.create({
-                name,
-                tax_address,
-                tax_regime,
-                contact_name,
-                contact_email,
-                contact_phone // Este campo es opcional (allowNull: true)
-            });
-
-            // 3. Devolver la respuesta de éxito (201 Created)
-            res.status(201).json({
-                code: 1,
-                message: 'Cliente creado exitosamente',
-                client: newClient
-            });
-
-        } catch (error) {
-            console.error(`[ERROR] [Client] [postClient]`, error);
-            
-            // Manejar error de unicidad (si el name ya existe)
-            if (error.name === 'SequelizeUniqueConstraintError') {
-                return res.status(400).json({
-                    code: 0,
-                    message: 'Ya existe un cliente con ese Nombre (name).'
-                });
-            }
-            
-            // Manejar errores de validación de Sequelize
-            if (error.name === 'SequelizeValidationError') {
-                const messages = error.errors.map(err => err.message);
-                return res.status(400).json({
-                    code: 0,
-                    message: 'Error de validación en los datos del cliente.',
-                    errors: messages
-                });
-            }
-
-            // Error genérico del servidor
-            res.status(500).json({
+    } catch (error) {
+        console.error(`[ERROR] [Client] [postClient]`, error);
+        
+        // Manejo de errores de Sequelize
+        if (error.name === 'SequelizeValidationError') {
+            const messages = error.errors.map(err => err.message);
+            return res.status(400).json({
                 code: 0,
-                error: "Ha ocurrido un error inesperado. Intente nuevamente."
+                message: 'Error de validación en los datos del cliente.',
+                errors: messages
             });
         }
+        
+        if (error.name === 'SequelizeUniqueConstraintError') {
+             return res.status(400).json({
+                code: 0,
+                message: 'Ya existe un cliente con ese Nombre (name).'
+            });
+        }
+
+        // Error genérico del servidor
+        res.status(500).json({
+            code: 0,
+            error: "Ha ocurrido un error inesperado. Intente nuevamente."
+        });
+    }
 };
 
 const destroyClient = async (req, res) => {
@@ -235,6 +212,35 @@ const restoreClient = async (req, res) => {
     }
 };
 
+const getDeletedClients = async (req, res) => {
+    try {
+        const deletedClients = await Client.findAll({
+            // 1. Desactiva el filtro automático de soft delete
+            paranoid: false, 
+            
+            // 2. Filtra explícitamente solo los que tienen marca de tiempo
+            where: {
+                deleted_at: {
+                    [Op.ne]: null // Op.ne significa "not equal to" (NO es igual a) NULL
+                }
+            },
+            attributes: ['id','name','tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
+            ]
+        });
+
+        res.status(200).json({
+            code: 1,
+            clients: deletedClients,
+        });
+    } catch (error) {
+        console.error('Error al obtener los clientes eliminados:', error);
+        res.status(500).json({
+            code: 0,
+            error: "Ha ocurrido un error inesperado. Intente nuevamente."
+        });
+    }
+};
+
 
 module.exports = {
   getClients,
@@ -243,4 +249,5 @@ module.exports = {
   destroyClient,
   updateClient,
   restoreClient,
+  getDeletedClients
 };
