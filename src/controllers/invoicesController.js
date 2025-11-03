@@ -7,7 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { sendEmail } = require('../helpers/emailHelper');
-
+const axios = require('axios');
+const soap = require('soap');
+const { buildCfdi40Xml } = require('../helpers/cfdiBuilder');
 /**
  * GET Invoice by ID
  */
@@ -277,8 +279,104 @@ const getCodesByInvoice = async (req, res) => {
     }
 };
 
-// 2. Definición del Middleware: ESTA ES LA VARIABLE QUE EXPORTAS
 const imageUploadMiddleware = multer({ storage: diskStorage }).single('validationImage');
+
+// --- Configuración cargada del .env ---
+const USUARIO_SF = process.env.SF_TEST_USERNAME;
+const PASSWORD_SF = process.env.SF_TEST_PASSWORD;
+// URL WSDL de Solución Factible
+const URL_WSDL = process.env.SF_API_URL_SANDBOX || 'https://testing.solucionfactible.com/ws/services/Timbrado?wsdl';
+/**
+ * @param {string} cfdiXmlString - La cadena XML del CFDI 4.0 lista para ser codificada.
+ */
+const timbrarCfdi = (cfdiXmlString) => {
+    
+    // 1. Validar que la cadena XML exista
+    if (!cfdiXmlString || typeof cfdiXmlString !== 'string' || cfdiXmlString.length === 0) {
+        throw new Error("Se requiere la cadena XML del CFDI para el timbrado.");
+    }
+
+    // 2. Codificar el XML a Base64
+    const cfdiBase64 = Buffer.from(cfdiXmlString, 'utf-8').toString('base64');
+    
+    // 3. Argumentos para la llamada SOAP
+    const args = {
+        usuario: USUARIO_SF,
+        password: PASSWORD_SF,
+        cfdi: cfdiBase64,
+        zip: false
+    };
+
+    // 4. Llamada al Cliente SOAP (Promesa)
+    return new Promise((resolve, reject) => {
+        
+        soap.createClient(URL_WSDL, function(err, client) {
+            if (err) {
+                console.error("Error al crear el cliente SOAP:", err);
+                return reject(new Error("No se pudo conectar al WSDL de Solución Factible."));
+            }
+
+            // Llamamos a la operación 'timbrar'
+            client.timbrar(args, function(err, result) {
+                if (err) {
+                    console.error("Error en la llamada a timbrar:", err);
+                    return reject(new Error("Error de red o SOAP."));
+                }
+                
+                // 5. Procesar el Resultado
+                const ret = result.return;
+                
+                if (ret.status == 200) {
+                    // Timbrado exitoso
+                    console.log(`Timbrado exitoso. UUID: ${ret.resultados[0].uuid}`);
+                    resolve(ret.resultados[0]);
+                } else {
+                    // Error reportado por Solución Factible
+                    console.error(`Error de Timbrado [${ret.status}]: ${ret.mensaje}`);
+                    reject(new Error(`Error de timbrado: ${ret.mensaje}`));
+                }
+            });
+        });
+    });
+};
+
+const timbrar = async (req, res) => {
+    try {
+        // 1. Obtener la factura de prueba de la base de datos
+        // Usaremos el ID 1 como ejemplo
+        const invoiceRecord = await Invoice.findByPk(1); 
+
+        if (!invoiceRecord) {
+            return res.status(404).json({
+                code: 0,
+                message: 'Error: Factura de prueba ID 1 no encontrada en la base de datos.'
+            });
+        }
+        
+        // 2. Convertir el objeto Sequelize a un objeto JSON simple para el helper
+        const invoiceData = invoiceRecord.toJSON(); 
+
+        // 3. Generar la cadena XML completa del CFDI 4.0
+        const cfdiXmlString = buildCfdi40Xml(invoiceData); 
+
+        // 4. Llamar al servicio de timbrado (SOAP)
+        const resultadoTimbrado = await timbrarCfdi(cfdiXmlString);
+
+        // 5. Devolver la respuesta
+        res.status(200).json({
+            code: 1,
+            message: 'Timbrado de factura solicitado exitosamente.',
+            data: resultadoTimbrado
+        });
+
+    } catch (error) {
+        console.error('Error en el proceso de Timbrado:', error);
+        res.status(500).json({
+            code: 0,
+            error: error.message || 'Fallo interno en el timbrado de la factura.'
+        });
+    }
+};
 
 module.exports = {
     getInvoices,
@@ -290,5 +388,6 @@ module.exports = {
     getDeletedInvoices,
     validateCodeAndImage,
     imageUploadMiddleware,
-    getCodesByInvoice
+    getCodesByInvoice,
+    timbrar
 };
