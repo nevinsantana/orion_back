@@ -9,12 +9,16 @@ const {
   updateInvoice, 
   destroyInvoice,
   restoreInvoice, // <-- Función de restauración
-  getDeletedInvoices
+  getDeletedInvoices,
+  getCodesByInvoice,
+  timbrar
 } = require("../controllers/invoicesController");
 
 // Rutas Protegidas de CRUD
 router.get("/", authMiddleware, getInvoices);
-router.get("/deleted", authMiddleware, getDeletedInvoices); 
+router.get("/deleted", authMiddleware, getDeletedInvoices);
+router.get("/get_payment_invoice/:id", authMiddleware, getCodesByInvoice);
+ 
 
 // Rutas con ID
 router.get("/:id", authMiddleware, getInvoice);
@@ -24,5 +28,6 @@ router.delete("/:id", authMiddleware, destroyInvoice);
 // Ruta de Restauración
 router.post("/restore/:id", authMiddleware, restoreInvoice);
 router.post("/", authMiddleware, postInvoice);
+router.post("/timbrar", timbrar);
 
 module.exports = router;

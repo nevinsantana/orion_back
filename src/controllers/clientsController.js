@@ -32,7 +32,7 @@ const getClient = async (req, res) => {
   try {
     const { id } = req.params;
     const Client_data = await Client.findByPk(id, {
-      attributes: ['id','name','tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
+      attributes: ['id','name', 'rfc', 'tax_address','contact_name','contact_email','contact_phone','uso_cfdi','regimen_fiscal_receptor','domicilio_fiscal_receptor','metodo_pago','forma_pago','email_recepcion_facturas'
             ]
     });
 

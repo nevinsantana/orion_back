@@ -22,7 +22,7 @@ const calculateInvoiceStatus = (invoice) => {
         (sum, payment) => sum + parseFloat(payment.amount),
         0
       )
-    : parseFloat(invoice.paid_amount_sum || invoice.paid_amount || 0); // Asume el resultado de la subconsulta si no hay include
+    : parseFloat(invoice.paid_amount_sum || invoice.paid_amount || 0);
 
   const total_amount = parseFloat(invoice.total_amount);
 
@@ -33,7 +33,7 @@ const calculateInvoiceStatus = (invoice) => {
   const today = new Date();
 
   // Regla 1: Pagada (si el saldo es 0 o negativo, significa que ya se cubrió)
-  const isPaidInFull = saldoPendiente <= 0.0; // Comparación segura
+  const isPaidInFull = saldoPendiente <= 0.0;
 
   let status = "Pendiente";
 
@@ -54,9 +54,30 @@ const calculateInvoiceStatus = (invoice) => {
 
 /**
  * Obtiene la cartera de facturas con el estatus de seguimiento de pago calculado.
+ * @param {object} filters - Objeto con filtros opcionales (date_from, date_to).
+ * @returns {Promise<Array>} Lista de facturas con estatus de seguimiento.
  */
-const getFollowUpPortfolio = async () => {
-  // Este método usa la subconsulta literal para eficiencia del listado general
+const getFollowUpPortfolio = async (filters = {}) => {
+  // Lógica para aplicar el filtro de fechas y el límite de 100
+  const whereCondition = { deleted_at: { [Op.is]: null } };
+  let limit = null;
+
+  const { date_from, date_to } = filters;
+
+  if (date_from || date_to) {
+    // Si se proporciona ALGÚN filtro de fecha, aplicamos el rango
+    whereCondition.created_at = {
+      // Rango: Mayor o igual a date_from Y Menor o igual a date_to
+      [Op.between]: [
+        date_from || new Date(0), // Si date_from es nulo, usa la fecha mínima (01-01-1970)
+        date_to ? new Date(date_to) : new Date(), // Si date_to es nulo, usa hoy
+      ],
+    };
+  } else {
+    // Regla: Si NO hay filtros de fecha, mostrar solo los últimos 100
+    limit = 100;
+  }
+
   const invoices = await Invoice.findAll({
     attributes: [
       "id",
@@ -68,7 +89,7 @@ const getFollowUpPortfolio = async () => {
         literal(
           "(SELECT SUM(amount) FROM payment_history WHERE payment_history.invoice_id = Invoice.id)"
         ),
-        "paid_amount_sum", // Usamos este alias en snake_case
+        "paid_amount_sum",
       ],
     ],
     include: [
@@ -78,8 +99,9 @@ const getFollowUpPortfolio = async () => {
         attributes: ["id", "name", "contact_email"],
       },
     ],
-    where: { deleted_at: { [Op.is]: null } },
+    where: whereCondition, // Aplicamos el filtro que construimos
     order: [["due_date", "ASC"]], // Ordenamos por fecha de vencimiento
+    limit: limit, // Aplicamos el límite (será null si hay filtros de fecha, o 100 si no los hay)
   });
 
   const portfolio = invoices.map((invoice) => {
@@ -90,7 +112,7 @@ const getFollowUpPortfolio = async () => {
     return {
       ...rawInvoice,
       ...calculatedStatus,
-      paid_amount_sum: undefined, // Limpiamos el campo técnico
+      paid_amount_sum: undefined,
     };
   });
 
@@ -131,7 +153,7 @@ const getSingleFollowUp = async (id) => {
 
   const rawInvoice = invoice.get({ plain: true });
 
-  // 2. Calculamos el estatus en memoria (en JS) sumando los pagos
+  // 2. Calculamos el estatus en memoria (en JS)
   const calculated = calculateInvoiceStatus(rawInvoice);
 
   return {
