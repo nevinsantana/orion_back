@@ -72,6 +72,11 @@ module.exports = (sequelize, DataTypes) => {
     email_recepcion_facturas: {
       type: DataTypes.STRING,
       allowNull: true
+    },
+    payment_category: {
+      type: DataTypes.ENUM('Alto Riesgo', 'Riesgo Medio', 'Bajo Riesgo', 'Siempre a Tiempo'),
+      allowNull: false,
+      defaultValue: 'Bajo Riesgo'
     }
   }, {
     sequelize,
