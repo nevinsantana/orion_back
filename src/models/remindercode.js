@@ -35,7 +35,7 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: false
     },
-    imageUrl: { // Mapeo de 'image' de la BD a 'imageUrl' en JS
+    image: { // Mapeo de 'image' de la BD a 'imageUrl' en JS
       type: DataTypes.STRING(500),
       allowNull: true,
       field: 'image' // Nombre exacto de la columna en la migración de Luis

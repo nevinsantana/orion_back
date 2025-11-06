@@ -189,7 +189,7 @@ const validateCodeAndImage = async (req, res) => {
         // 3. Actualizar el registro: Marcar como usado y guardar la RUTA PÚBLICA PERMANENTE
         await reminderRecord.update({
             used: true,
-            image: publicPath // Guardamos la ruta pública
+            image: file.filename // Guardamos la ruta pública
         });
 
         let invoice_info = await Invoice.findByPk(reminderRecord.id_invoice);
@@ -205,8 +205,8 @@ const validateCodeAndImage = async (req, res) => {
         
         // Ejecutar el envío de correo (asumo que tu helper se llama sendEmail o sendPasswordResetEmail)
         // Usamos una función genérica que acepta el destino, asunto y cuerpo HTML
-        await sendEmail(clientEmail, subject, emailBody);
-
+        //await sendEmail(clientEmail, subject, emailBody);
+        
 
         // 5. Respuesta de éxito
         res.status(200).json({
