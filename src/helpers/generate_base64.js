@@ -3,7 +3,7 @@ const path = require('path');
 
 // ⚠️ 1. DEFINE LA RUTA EXACTA A TU ARCHIVO .CER AQUÍ
 // Ejemplo de ruta, ajusta 'nombre_de_tu_certificado.cer' y la carpeta:
-const certFilePath = path.join(__dirname, '../../public', 'testing_cer.cer'); 
+const certFilePath = path.join(__dirname, '../../public/sat', 'CSD_Sucursal_1_ZUÑ920208KL4_20230118_140939.cer'); 
 
 try {
     // 2. Lee el archivo binario del certificado (.cer)

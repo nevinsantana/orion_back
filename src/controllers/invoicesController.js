@@ -10,6 +10,7 @@ const { sendEmail } = require('../helpers/emailHelper');
 const axios = require('axios');
 const soap = require('soap');
 const { buildCfdi40Xml } = require('../helpers/cfdiBuilder');
+const crypto = require('crypto');
 /**
  * GET Invoice by ID
  */
@@ -206,7 +207,7 @@ const validateCodeAndImage = async (req, res) => {
         // Ejecutar el envío de correo (asumo que tu helper se llama sendEmail o sendPasswordResetEmail)
         // Usamos una función genérica que acepta el destino, asunto y cuerpo HTML
         //await sendEmail(clientEmail, subject, emailBody);
-        
+
 
         // 5. Respuesta de éxito
         res.status(200).json({
@@ -281,100 +282,65 @@ const getCodesByInvoice = async (req, res) => {
 
 const imageUploadMiddleware = multer({ storage: diskStorage }).single('validationImage');
 
-// --- Configuración cargada del .env ---
-const USUARIO_SF = process.env.SF_TEST_USERNAME;
-const PASSWORD_SF = process.env.SF_TEST_PASSWORD;
-// URL WSDL de Solución Factible
-const URL_WSDL = process.env.SF_API_URL_SANDBOX || 'https://testing.solucionfactible.com/ws/services/Timbrado?wsdl';
-/**
- * @param {string} cfdiXmlString - La cadena XML del CFDI 4.0 lista para ser codificada.
- */
-const timbrarCfdi = (cfdiXmlString) => {
+//Validar pago humano o IA
+const updatePaymentStatus = async (req, res) => {
+    const { reminder_id, status } = req.body;
     
-    // 1. Validar que la cadena XML exista
-    if (!cfdiXmlString || typeof cfdiXmlString !== 'string' || cfdiXmlString.length === 0) {
-        throw new Error("Se requiere la cadena XML del CFDI para el timbrado.");
+    const finalStatus = status?.toUpperCase();
+    if (!reminder_id || (finalStatus !== 'ACEPTADO' && finalStatus !== 'RECHAZADO')) {
+        return res.status(400).json({ code: 0, message: 'Se requiere reminder_id y un estado válido ("ACEPTADO" o "RECHAZADO").' });
     }
 
-    // 2. Codificar el XML a Base64
-    const cfdiBase64 = Buffer.from(cfdiXmlString, 'utf-8').toString('base64');
-    
-    // 3. Argumentos para la llamada SOAP
-    const args = {
-        usuario: USUARIO_SF,
-        password: PASSWORD_SF,
-        cfdi: cfdiBase64,
-        zip: false
-    };
-
-    // 4. Llamada al Cliente SOAP (Promesa)
-    return new Promise((resolve, reject) => {
-        
-        soap.createClient(URL_WSDL, function(err, client) {
-            if (err) {
-                console.error("Error al crear el cliente SOAP:", err);
-                return reject(new Error("No se pudo conectar al WSDL de Solución Factible."));
-            }
-
-            // Llamamos a la operación 'timbrar'
-            client.timbrar(args, function(err, result) {
-                if (err) {
-                    console.error("Error en la llamada a timbrar:", err);
-                    return reject(new Error("Error de red o SOAP."));
-                }
-                
-                // 5. Procesar el Resultado
-                const ret = result.return;
-                
-                if (ret.status == 200) {
-                    // Timbrado exitoso
-                    console.log(`Timbrado exitoso. UUID: ${ret.resultados[0].uuid}`);
-                    resolve(ret.resultados[0]);
-                } else {
-                    // Error reportado por Solución Factible
-                    console.error(`Error de Timbrado [${ret.status}]: ${ret.mensaje}`);
-                    reject(new Error(`Error de timbrado: ${ret.mensaje}`));
-                }
-            });
-        });
-    });
-};
-
-const timbrar = async (req, res) => {
+    let transaction;
     try {
-        // 1. Obtener la factura de prueba de la base de datos
-        // Usaremos el ID 1 como ejemplo
-        const invoiceRecord = await Invoice.findByPk(1); 
+        // 1. INICIO DE TRANSACCIÓN: Asegura que el update del código y la factura sean atómicos.
+        transaction = await sequelize.transaction();
 
-        if (!invoiceRecord) {
-            return res.status(404).json({
-                code: 0,
-                message: 'Error: Factura de prueba ID 1 no encontrada en la base de datos.'
-            });
+        // 2. Buscar el registro de ReminderCode e incluir la Factura (usando el ID)
+        const reminderRecord = await ReminderCode.findByPk(reminder_id, {
+            include: [{ model: Invoice }], 
+            transaction // <-- Se asegura que esta búsqueda esté dentro de la transacción
+        });
+
+        if (!reminderRecord || !reminderRecord.Invoice) {
+            await transaction.rollback();
+            return res.status(404).json({ code: 0, message: 'Registro de código o Factura asociada no encontrado.' });
         }
         
-        // 2. Convertir el objeto Sequelize a un objeto JSON simple para el helper
-        const invoiceData = invoiceRecord.toJSON(); 
+        const invoice = reminderRecord.Invoice;
 
-        // 3. Generar la cadena XML completa del CFDI 4.0
-        const cfdiXmlString = buildCfdi40Xml(invoiceData); 
+        // 3. Lógica de Actualización
+        if (finalStatus === 'ACEPTADO') {
+            // A. PAGO ACEPTADO: Marcar la factura como Pagada
+            await invoice.update({ status: 'Pagada' }, { transaction });
+            
+            // Opcional: Notificación
+            // await sendEmail(invoice.contact_email, "Pago Confirmado", `Su pago para la factura #${invoice.id} ha sido aplicado.`);
 
-        // 4. Llamar al servicio de timbrado (SOAP)
-        const resultadoTimbrado = await timbrarCfdi(cfdiXmlString);
+        } else if (finalStatus === 'RECHAZADO') {
+            // B. PAGO RECHAZADO: Revertir el estado del código para permitir el reintento
+            await reminderRecord.update({ 
+                used: false, // <-- Lo ponemos en false para que el código sea reusable.
+                image: null, // Limpiamos la referencia a la imagen rechazada.
+            }, { transaction }); 
+            
+            // Opcional: Notificación de rechazo
+            // await sendEmail(invoice.contact_email, "Pago Rechazado", `Su comprobante fue rechazado.`);
+        }
 
-        // 5. Devolver la respuesta
+        // 4. CONFIRMAR: Si los updates de Invoice y ReminderCode fueron correctos.
+        await transaction.commit();
+
         res.status(200).json({
             code: 1,
-            message: 'Timbrado de factura solicitado exitosamente.',
-            data: resultadoTimbrado
+            message: `Estado de la Factura #${invoice.id} actualizado a ${finalStatus}.`,
+            invoice_status: finalStatus
         });
 
     } catch (error) {
-        console.error('Error en el proceso de Timbrado:', error);
-        res.status(500).json({
-            code: 0,
-            error: error.message || 'Fallo interno en el timbrado de la factura.'
-        });
+        if (transaction) await transaction.rollback();
+        console.error('[ERROR] [updatePaymentStatus]', error);
+        res.status(500).json({ code: 0, error: "Fallo interno en la actualización de estado. Transacción revertida." });
     }
 };
 
@@ -389,5 +355,5 @@ module.exports = {
     validateCodeAndImage,
     imageUploadMiddleware,
     getCodesByInvoice,
-    timbrar
+    updatePaymentStatus
 };
