@@ -1,7 +1,7 @@
 // src/controllers/invoicesController.js
 
 const { Invoice } = require('../models');
-const { ReminderCode } = require('../models');
+const { ReminderCode, PaymentHistory, sequelize } = require('../models');
 const { Op } = require('sequelize'); 
 const fs = require('fs'); 
 const path = require('path');
@@ -292,54 +292,74 @@ const updatePaymentStatus = async (req, res) => {
     }
 
     let transaction;
+    let filePath = null; // Necesario para la limpieza de disco en caso de fallo
+
     try {
-        // 1. INICIO DE TRANSACCIÓN: Asegura que el update del código y la factura sean atómicos.
+        // 1. INICIO DE TRANSACCIÓN
         transaction = await sequelize.transaction();
 
-        // 2. Buscar el registro de ReminderCode e incluir la Factura (usando el ID)
-        const reminderRecord = await ReminderCode.findByPk(reminder_id, {
-            include: [{ model: Invoice }], 
-            transaction // <-- Se asegura que esta búsqueda esté dentro de la transacción
-        });
+        // A. Buscar SOLO el registro de ReminderCode (sin INCLUDE)
+        const reminderRecord = await ReminderCode.findByPk(reminder_id, { transaction });
 
-        if (!reminderRecord || !reminderRecord.Invoice) {
+        if (!reminderRecord) {
             await transaction.rollback();
-            return res.status(404).json({ code: 0, message: 'Registro de código o Factura asociada no encontrado.' });
+            return res.status(404).json({ code: 0, message: 'Registro de código no encontrado.' });
         }
         
-        const invoice = reminderRecord.Invoice;
+        // B. Buscar la Factura en un paso SEPARADO
+        const invoice = await Invoice.findByPk(reminderRecord.id_invoice, { transaction });
+
+        if (!invoice) {
+            await transaction.rollback();
+            return res.status(404).json({ code: 0, message: 'Factura asociada no encontrada.' });
+        }
 
         // 3. Lógica de Actualización
         if (finalStatus === 'ACEPTADO') {
-            // A. PAGO ACEPTADO: Marcar la factura como Pagada
-            await invoice.update({ status: 'Pagada' }, { transaction });
+            // A. CREAR REGISTRO EN EL HISTORIAL DE PAGOS
+            await PaymentHistory.create({
+                invoiceId: invoice.id,
+                paymentDate: new Date(), 
+                amount: invoice.total_amount, 
+                paymentMethod: 'Manual/Comprobante',
+                description: `Confirmación manual de comprobante (Código: ${reminderRecord.code})`,
+                confirmation_status: 'ÉXITO'
+            }, { transaction });
             
-            // Opcional: Notificación
-            // await sendEmail(invoice.contact_email, "Pago Confirmado", `Su pago para la factura #${invoice.id} ha sido aplicado.`);
+            // B. Actualizar el estado de la factura a Pagada
+            await invoice.update({ status: 'Pagada' }, { transaction });
+
+            // C. Marcar el código de recordatorio como usado
+            await reminderRecord.update({ used: true, completed_at: new Date() }, { transaction });
+            
+            // Opcional: Envío de email
+            // await sendEmail(invoice.contact_email, "Pago Confirmado...", "...");
 
         } else if (finalStatus === 'RECHAZADO') {
-            // B. PAGO RECHAZADO: Revertir el estado del código para permitir el reintento
+            // D. PAGO RECHAZADO: Permite el reintento
             await reminderRecord.update({ 
-                used: false, // <-- Lo ponemos en false para que el código sea reusable.
-                image: null, // Limpiamos la referencia a la imagen rechazada.
+                used: false, 
+                image: null, // Limpiar la referencia de la imagen
             }, { transaction }); 
-            
             // Opcional: Notificación de rechazo
-            // await sendEmail(invoice.contact_email, "Pago Rechazado", `Su comprobante fue rechazado.`);
         }
 
-        // 4. CONFIRMAR: Si los updates de Invoice y ReminderCode fueron correctos.
+        // 4. CONFIRMAR
         await transaction.commit();
 
         res.status(200).json({
             code: 1,
-            message: `Estado de la Factura #${invoice.id} actualizado a ${finalStatus}.`,
+            message: `Revisión completada. Factura #${invoice.id} marcada como ${finalStatus}.`,
             invoice_status: finalStatus
         });
 
     } catch (error) {
         if (transaction) await transaction.rollback();
         console.error('[ERROR] [updatePaymentStatus]', error);
+        
+        // ⚠️ Nota: La limpieza del archivo local es compleja aquí, ya que la ruta no se conoce si el fallo es temprano.
+        // Asumiendo que el archivo de imagen es permanente, lo omitimos en el rollback de error.
+        
         res.status(500).json({ code: 0, error: "Fallo interno en la actualización de estado. Transacción revertida." });
     }
 };
