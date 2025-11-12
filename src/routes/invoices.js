@@ -11,7 +11,9 @@ const {
   restoreInvoice, // <-- Función de restauración
   getDeletedInvoices,
   getCodesByInvoice,
-  updatePaymentStatus
+  updatePaymentStatus,
+  getAllReminderCodes,
+  getReminderCodeById
 } = require("../controllers/invoicesController");
 
 const { 
@@ -22,7 +24,9 @@ const {
 router.get("/", authMiddleware, getInvoices);
 router.get("/deleted", authMiddleware, getDeletedInvoices);
 router.get("/get_payment_invoice/:id", authMiddleware, getCodesByInvoice);
- 
+router.get("/getAllReminderCodes", authMiddleware, getAllReminderCodes);
+router.get("/getReminderCodeById/:id", getReminderCodeById );
+
 
 // Rutas con ID
 router.get("/:id", authMiddleware, getInvoice);
