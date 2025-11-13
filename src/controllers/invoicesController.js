@@ -1,6 +1,6 @@
 // src/controllers/invoicesController.js
 
-const { Invoice } = require('../models');
+const { Invoice, Client } = require('../models');
 const { ReminderCode, PaymentHistory, sequelize } = require('../models');
 const { Op } = require('sequelize'); 
 const fs = require('fs'); 
@@ -401,7 +401,7 @@ const getAllReminderCodes = async (req, res) => {
             order: [
                 ['id', 'DESC']
             ],
-            // 2. Seleccionar solo los campos relevantes
+            // 2. Seleccionar solo los campos relevantes del ReminderCode
             attributes: [
                 'id', 
                 'id_invoice', 
@@ -410,8 +410,23 @@ const getAllReminderCodes = async (req, res) => {
                 'image', 
                 'created_at'
             ],
-            // 3. Opcional: Incluir la factura asociada para contexto, si es necesario
-            // include: [{ model: Invoice, attributes: ['name', 'rfc'] }] 
+            // 3. INCLUSIÓN ANIDADA
+            include: [{
+                model: Invoice,
+                as: 'invoice', // Alias de ReminderCode a Invoice (confirmado previamente)
+                attributes: ['id'], // Solo necesitamos el ID de la factura (o los que necesites)
+                required: true, // Opcional: Solo trae códigos que SÍ tienen factura
+                
+                // INCLUSIÓN ANIDADA: Obtener el Cliente de la Factura
+                include: [{
+                    // ✅ Asegúrate de que este sea el nombre de tu modelo Client
+                    model: Client, 
+                    // ✅ Asegúrate de que este sea el alias definido en Invoice.belongsTo(Client)
+                    as: 'client', 
+                    // ✅ Selecciona solo el nombre del cliente
+                    attributes: ['name'] 
+                }]
+            }]
         });
 
         res.status(200).json({

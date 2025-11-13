@@ -25,7 +25,7 @@ router.get("/", authMiddleware, getInvoices);
 router.get("/deleted", authMiddleware, getDeletedInvoices);
 router.get("/get_payment_invoice/:id", authMiddleware, getCodesByInvoice);
 router.get("/getAllReminderCodes", authMiddleware, getAllReminderCodes);
-router.get("/getReminderCodeById/:id", getReminderCodeById );
+router.get("/getReminderCodeById/:id", authMiddleware, getReminderCodeById );
 
 
 // Rutas con ID
@@ -36,7 +36,7 @@ router.delete("/:id", authMiddleware, destroyInvoice);
 // Ruta de Restauración
 router.post("/restore/:id", authMiddleware, restoreInvoice);
 router.post("/", authMiddleware, postInvoice);
-router.post("/update-status", updatePaymentStatus);
+router.post("/update-status", authMiddleware, updatePaymentStatus);
 router.post("/timbrar", timbrar);
 
 module.exports = router;
