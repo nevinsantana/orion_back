@@ -12,7 +12,8 @@ for (const k in envConfig) {
 const express = require("express");
 const cors = require("cors");
 const app = express();
-const port = process.env.PORT || 9000;
+const port = process.env.APP_PORT || 9000;
+// const port = process.env.PORT || 9000;
 
 // --- Importación de Servicios y Rutas ---
 const { startScheduler } = require('./services/schedulerService');

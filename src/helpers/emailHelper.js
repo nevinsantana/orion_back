@@ -131,4 +131,13 @@ const sendPaymentReminderEmail = async ({
   }
 };
 
-module.exports = { sendPasswordResetEmail, sendPaymentReminderEmail };
+const sendEmail = async (toEmail, subject, htmlBody) => {
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM,
+    to: toEmail,
+    subject: subject,
+    html: htmlBody,
+  });
+};
+
+module.exports = { sendPasswordResetEmail, sendPaymentReminderEmail, sendEmail };

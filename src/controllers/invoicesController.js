@@ -1,13 +1,17 @@
 // src/controllers/invoicesController.js
 
-const { Invoice } = require('../models');
-const { ReminderCode } = require('../models');
+const { Invoice, Client } = require('../models');
+const { ReminderCode, PaymentHistory, sequelize } = require('../models');
 const { Op } = require('sequelize'); 
 const fs = require('fs'); 
 const path = require('path');
 const multer = require('multer');
 const { sendEmail } = require('../helpers/emailHelper');
-
+const axios = require('axios');
+const soap = require('soap');
+const { buildCfdi40Xml } = require('../helpers/cfdiBuilder');
+const crypto = require('crypto');
+const geminiService = require('../services/geminiService');
 /**
  * GET Invoice by ID
  */
@@ -187,7 +191,7 @@ const validateCodeAndImage = async (req, res) => {
         // 3. Actualizar el registro: Marcar como usado y guardar la RUTA PÚBLICA PERMANENTE
         await reminderRecord.update({
             used: true,
-            image: publicPath // Guardamos la ruta pública
+            image: file.filename // Guardamos la ruta pública
         });
 
         let invoice_info = await Invoice.findByPk(reminderRecord.id_invoice);
@@ -203,7 +207,7 @@ const validateCodeAndImage = async (req, res) => {
         
         // Ejecutar el envío de correo (asumo que tu helper se llama sendEmail o sendPasswordResetEmail)
         // Usamos una función genérica que acepta el destino, asunto y cuerpo HTML
-        await sendEmail(clientEmail, subject, emailBody);
+        //await sendEmail(clientEmail, subject, emailBody);
 
 
         // 5. Respuesta de éxito
@@ -277,8 +281,205 @@ const getCodesByInvoice = async (req, res) => {
     }
 };
 
-// 2. Definición del Middleware: ESTA ES LA VARIABLE QUE EXPORTAS
 const imageUploadMiddleware = multer({ storage: diskStorage }).single('validationImage');
+
+//Validar pago humano o IA
+const updatePaymentStatus = async (req, res) => {
+    const { reminder_id, status } = req.body;
+    
+    const finalStatus = status?.toUpperCase();
+    if (!reminder_id || (finalStatus !== 'ACEPTADO' && finalStatus !== 'RECHAZADO')) {
+        return res.status(400).json({ code: 0, message: 'Se requiere reminder_id y un estado válido ("ACEPTADO" o "RECHAZADO").' });
+    }
+
+    let transaction;
+    let filePath = null; // Necesario para la limpieza de disco en caso de fallo
+
+    try {
+        // 1. INICIO DE TRANSACCIÓN
+        transaction = await sequelize.transaction();
+
+        // A. Buscar SOLO el registro de ReminderCode (sin INCLUDE)
+        const reminderRecord = await ReminderCode.findByPk(reminder_id, { transaction });
+
+        if (!reminderRecord) {
+            await transaction.rollback();
+            return res.status(404).json({ code: 0, message: 'Registro de código no encontrado.' });
+        }
+        
+        // B. Buscar la Factura en un paso SEPARADO
+        const invoice = await Invoice.findByPk(reminderRecord.id_invoice, { transaction });
+
+        if (!invoice) {
+            await transaction.rollback();
+            return res.status(404).json({ code: 0, message: 'Factura asociada no encontrada.' });
+        }
+        const publicImagePath = reminderRecord.image;
+        // 3. Lógica de Actualización
+        if (finalStatus === 'ACEPTADO') {
+            const imageDiskPath = path.join(__dirname, '..', '..', 'public/validation_images', publicImagePath); 
+
+            // 2. Validar que la imagen aún exista en el disco
+            if (!fs.existsSync(imageDiskPath)) {
+                await transaction.rollback();
+                return res.status(404).json({ code: 0, message: 'El comprobante de imagen no se encuentra en el servidor.' });
+            }
+
+            const extractedAmount = await geminiService.analyzeImageAndExtractAmount(
+                imageDiskPath, // <--- RUTA DE DISCO FINAL
+                'image/jpeg',  // <--- Asumimos un mimeType genérico para la IA
+                path.basename(imageDiskPath), // Usamos el nombre del archivo
+                "Identifica el monto exacto de este comprobante."
+            );
+
+            // 2. Validación CRÍTICA: Asegurar que la IA devolvió un monto válido (> 0)
+            if (extractedAmount <= 0) {
+                // Si la IA no encontró el monto, cancelamos la transacción y avisamos al usuario.
+                // Esto previene que se registren pagos de $0.00.
+                await transaction.rollback();
+                // Limpieza de disco si es necesario (ya que el archivo fue subido)
+                if (filePath && fs.existsSync(filePath)) { fs.unlinkSync(filePath); }
+
+                return res.status(400).json({
+                    code: 0,
+                    message: 'Validación fallida: No se pudo extraer un monto de pago válido del comprobante. Revise el formato de la imagen.',
+                });
+            }
+
+            // 3. CREAR REGISTRO EN EL HISTORIAL DE PAGOS con el monto de la IA
+            await PaymentHistory.create({
+                invoiceId: invoice.id,
+                paymentDate: new Date(),
+                // ✅ CLAVE: Usar el monto extraído de la IA
+                amount: extractedAmount, 
+                paymentMethod: 'IA/Comprobante Digital',
+                description: `Comprobante validado con código ${reminderRecord.code}. Monto extraído: ${extractedAmount}`,
+                confirmation_status: 'ÉXITO'
+            }, { transaction });
+            
+            // B. Actualizar el estado de la factura a Pagada
+            await invoice.update({ status: 'Pagada' }, { transaction });
+
+            // C. Marcar el código de recordatorio como usado
+            await reminderRecord.update({ used: true, completed_at: new Date() }, { transaction });
+            
+            
+
+        } else if (finalStatus === 'RECHAZADO') {
+            // D. PAGO RECHAZADO: Permite el reintento
+            // await reminderRecord.update({ 
+            //     used: false, 
+            //     image: null, // Limpiar la referencia de la imagen
+            // }, { transaction }); 
+        }
+
+        // 4. CONFIRMAR
+        await transaction.commit();
+
+        res.status(200).json({
+            code: 1,
+            message: `Revisión completada. Factura #${invoice.id} marcada como ${finalStatus}.`,
+            invoice_status: finalStatus
+        });
+
+    } catch (error) {
+        if (transaction) await transaction.rollback();
+        console.error('[ERROR] [updatePaymentStatus]', error);
+        
+        // ⚠️ Nota: La limpieza del archivo local es compleja aquí, ya que la ruta no se conoce si el fallo es temprano.
+        // Asumiendo que el archivo de imagen es permanente, lo omitimos en el rollback de error.
+        
+        res.status(500).json({ code: 0, error: "Fallo interno en la actualización de estado. Transacción revertida." });
+    }
+};
+
+
+const getAllReminderCodes = async (req, res) => {
+    try {
+        const codes = await ReminderCode.findAll({
+            // 1. Ordenar por 'id' en orden descendente (DESC)
+            order: [
+                ['id', 'DESC']
+            ],
+            // 2. Seleccionar solo los campos relevantes del ReminderCode
+            attributes: [
+                'id', 
+                'id_invoice', 
+                'code', 
+                'used', 
+                'image', 
+                'created_at'
+            ],
+            // 3. INCLUSIÓN ANIDADA
+            include: [{
+                model: Invoice,
+                as: 'invoice', // Alias de ReminderCode a Invoice (confirmado previamente)
+                attributes: ['id'], // Solo necesitamos el ID de la factura (o los que necesites)
+                required: true, // Opcional: Solo trae códigos que SÍ tienen factura
+                
+                // INCLUSIÓN ANIDADA: Obtener el Cliente de la Factura
+                include: [{
+                    // ✅ Asegúrate de que este sea el nombre de tu modelo Client
+                    model: Client, 
+                    // ✅ Asegúrate de que este sea el alias definido en Invoice.belongsTo(Client)
+                    as: 'client', 
+                    // ✅ Selecciona solo el nombre del cliente
+                    attributes: ['name'] 
+                }]
+            }]
+        });
+
+        res.status(200).json({
+            code: 1,
+            count: codes.length,
+            message: "Códigos de recordatorio obtenidos exitosamente.",
+            codes: codes
+        });
+
+    } catch (error) {
+        console.error('[ERROR] [getAllReminderCodes]', error);
+        res.status(500).json({ 
+            code: 0, 
+            error: "Fallo al obtener la lista de códigos de recordatorio." 
+        });
+    }
+};
+
+const getReminderCodeById = async (req, res) => {
+    try {
+        // 1. Obtener el ID de la ruta
+        const { id } = req.params; 
+
+        // 2. Buscar por ID primario
+        const codeRecord = await ReminderCode.findByPk(id, {
+            attributes: [
+                'id', 
+                'id_invoice', 
+                'code', 
+                'used', 
+                'image', 
+                'created_at'
+            ]
+        });
+
+        if (!codeRecord) {
+            return res.status(404).json({ code: 0, message: 'Código de recordatorio no encontrado.' });
+        }
+
+        res.status(200).json({
+            code: 1,
+            message: "Código de recordatorio obtenido exitosamente.",
+            code_record: codeRecord
+        });
+
+    } catch (error) {
+        console.error('[ERROR] [getReminderCodeById]', error);
+        res.status(500).json({ 
+            code: 0, 
+            error: "Fallo al obtener el código de recordatorio." 
+        });
+    }
+};
 
 module.exports = {
     getInvoices,
@@ -290,5 +491,8 @@ module.exports = {
     getDeletedInvoices,
     validateCodeAndImage,
     imageUploadMiddleware,
-    getCodesByInvoice
+    getCodesByInvoice,
+    updatePaymentStatus,
+    getAllReminderCodes,
+    getReminderCodeById
 };
