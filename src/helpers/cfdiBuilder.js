@@ -15,11 +15,11 @@ const buildCfdi40Xml = (invoiceData) => {
     const fechaEmision = moment().tz('America/Mexico_City').format('YYYY-MM-DDTHH:mm:ss'); 
     
     // Datos del Emisor (Usando el CSD vigente más reciente de prueba)
-    const rfcEmisor = "ESI920427886"; // RFC de prueba (Verifica si cambió)
-    const nombreEmisor = "FACTURACION MODERNA SA DE CV";
+    const rfcEmisor = "ZUÑ920208KL4"; // RFC de prueba (Verifica si cambió)
+    const nombreEmisor = "ZAPATERIA URTADO —ERI";
     const regimenFiscalEmisor = "601"; 
     const lugarExpedicion = "68050"; 
-    const NoCertificado = "30001000000500003442"; // Número de serie más reciente
+    const NoCertificado = "30001000000500002669"; // Número de serie más reciente
     
     // Datos del Receptor (Usamos datos de la DB)
     const rfcReceptor = invoiceData.rfc || "XAXX010101000"; 
@@ -48,7 +48,7 @@ const buildCfdi40Xml = (invoiceData) => {
     Serie="A"
     Folio="${folio}"
     Fecha="${fechaEmision}"
-    Sello="${BASE64_SELLO_PRUEBA}" 
+    Sello="VEVTVA==" 
     NoCertificado="${NoCertificado}" 
     Certificado="${CERTIFICADO_BASE64_PRUEBA}"
     SubTotal="${subtotal}"
