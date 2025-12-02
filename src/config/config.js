@@ -1,20 +1,19 @@
 const dotenv = require('dotenv');
 const fs = require('fs');
-const path = require('path'); // <-- AGREGADO: Necesario para rutas absolutas
+const path = require('path');
 
-// --- Corrección de Lectura de .env ---
-// Buscamos el .env UN NIVEL ARRIBA de donde se está ejecutando el config.js.
-// El path.resolve encuentra la ruta absoluta del .env sin depender de dónde se ejecuta el comando.
+// --- Carga de .env (Igual que tenías) ---
 try {
     const envPath = path.resolve(__dirname, '../../.env');
-    const envConfig = dotenv.parse(fs.readFileSync(envPath));
-    for (const k in envConfig) {
-        process.env[k] = envConfig[k];
+    // Solo intentamos leer el archivo si existe (para que no falle en Lambda donde no subiremos el .env)
+    if (fs.existsSync(envPath)) {
+        const envConfig = dotenv.parse(fs.readFileSync(envPath));
+        for (const k in envConfig) {
+            process.env[k] = envConfig[k];
+        }
     }
 } catch (error) {
-    // Es común que la CLI de Sequelize falle al inicio de la carga,
-    // por eso lo encerramos en un try/catch para evitar que el programa se detenga
-    console.error('Advertencia: No se pudo cargar el archivo .env. Asegúrate de que exista en la raíz del proyecto.', error.message);
+    console.error('Nota: No se cargó .env local (normal en Producción/AWS si usas variables de entorno)', error.message);
 }
 // ----------------------------------------
 
@@ -25,7 +24,7 @@ const config = {
     database: process.env.DB_NAME,
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 3305, 
-    dialect: 'mysql', // La clave para Sequelize
+    dialect: 'mysql',
     logging: console.log, 
     dialectOptions: { 
         decimalNumbers: true 
@@ -39,15 +38,36 @@ const config = {
     dialect: "mysql",
     logging: false,
   },
+  // --- AQUÍ ESTÁ EL CAMBIO CLAVE PARA AWS ---
   production: {
-    username: process.env.DB_USER_PRODUCTION,
-    password: process.env.DB_PASSWORD_PRODUCTION,
-    database: process.env.DB_NAME_PRODUCTION,
-    host: process.env.DB_HOST_PRODUCTION,
+    // Nota: Asegúrate de que en AWS Lambda definamos estas variables de entorno (DB_USER, etc)
+    // He simplificado las variables para usar las estándar, pero puedes usar _PRODUCTION si prefieres.
+    username: process.env.DB_USER || process.env.DB_USER_PRODUCTION, 
+    password: process.env.DB_PASSWORD || process.env.DB_PASSWORD_PRODUCTION,
+    database: process.env.DB_NAME || process.env.DB_NAME_PRODUCTION,
+    host: process.env.DB_HOST || process.env.DB_HOST_PRODUCTION,
     dialect: "mysql",
-    logging: false,
+    logging: false, // Apagamos logs para ahorrar costos en CloudWatch
+    
+    // Configuración para que Lambda no rompa la BD
+    pool: {
+      max: 2,      // Máximo 2 conexiones por instancia de Lambda
+      min: 0,      // Mínimo 0 para permitir desconexión total
+      idle: 0,     // Cerrar inmediatamente si no se usa
+      acquire: 3000, // Timeout de 3s si no logra conectar
+      evict: 1000  // Limpiar conexiones viejas cada segundo
+    },
+    
+    dialectOptions: {
+      // Importante: Mantener coherencia con local para cálculos de dinero
+      decimalNumbers: true, 
+      // Obligatorio para RDS Aurora
+      ssl: {
+        require: true,
+        rejectUnauthorized: false // Acepta el certificado de AWS sin validación estricta de CA
+      }
+    }
   },
 };
 
-// Exportar el objeto completo
 module.exports = config;
