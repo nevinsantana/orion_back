@@ -13,7 +13,8 @@ const {
   getCodesByInvoice,
   updatePaymentStatus,
   getAllReminderCodes,
-  getReminderCodeById
+  getReminderCodeById,
+  generateInvoiceTxt
 } = require("../controllers/invoicesController");
 
 const { 
@@ -26,6 +27,7 @@ router.get("/deleted", authMiddleware, getDeletedInvoices);
 router.get("/get_payment_invoice/:id", authMiddleware, getCodesByInvoice);
 router.get("/getAllReminderCodes", authMiddleware, getAllReminderCodes);
 router.get("/getReminderCodeById/:id", authMiddleware, getReminderCodeById );
+router.get("/generate-txt/:id", generateInvoiceTxt);
 
 
 // Rutas con ID

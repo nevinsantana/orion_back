@@ -9,7 +9,7 @@ const multer = require('multer');
 const { sendEmail } = require('../helpers/emailHelper');
 const axios = require('axios');
 const soap = require('soap');
-const { buildCfdi40Xml } = require('../helpers/cfdiBuilder');
+const { buildCfdi40Xml, buildCfdi40Txt } = require('../helpers/cfdiBuilder');
 const crypto = require('crypto');
 const geminiService = require('../services/geminiService');
 /**
@@ -481,6 +481,42 @@ const getReminderCodeById = async (req, res) => {
     }
 };
 
+const generateInvoiceTxt = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Buscar la factura por ID en la DB
+        const invoiceRecord = await Invoice.findByPk(id);
+
+        if (!invoiceRecord) {
+            return res.status(404).json({
+                code: 0,
+                message: `Factura ID ${id} no encontrada.`
+            });
+        }
+        
+        // Convertir el objeto Sequelize a JSON simple para el helper
+        const invoiceData = invoiceRecord.toJSON(); 
+
+        // 2. Generar la cadena de texto plano TXT
+        const cfdiTxtString = buildCfdi40Txt(invoiceData);
+
+        // 3. Devolver la respuesta (puedes devolver el texto puro para depuración)
+        res.status(200).json({
+            code: 1,
+            message: `TXT CFDI 4.0 generado para Factura ID ${id}.`,
+            data: cfdiTxtString
+        });
+
+    } catch (error) {
+        console.error('Error al generar TXT de factura:', error);
+        res.status(500).json({
+            code: 0,
+            error: error.message || 'Fallo interno al generar el archivo TXT.'
+        });
+    }
+};
+
 module.exports = {
     getInvoices,
     getInvoice,
@@ -494,5 +530,6 @@ module.exports = {
     getCodesByInvoice,
     updatePaymentStatus,
     getAllReminderCodes,
-    getReminderCodeById
+    getReminderCodeById,
+    generateInvoiceTxt
 };
