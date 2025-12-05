@@ -5,57 +5,78 @@ const { ReminderCode, PaymentHistory, sequelize } = require('../models');
 const { Op } = require('sequelize'); 
 const fs = require('fs'); 
 const path = require('path');
+const os = require('os'); // Necesario para acceder a /tmp en Lambda
 const multer = require('multer');
 const { sendEmail } = require('../helpers/emailHelper');
 const axios = require('axios');
-const soap = require('soap');
+// const soap = require('soap'); // Si no usas SOAP actualmente, podrías borrarlo, pero lo dejo por si acaso
 const { buildCfdi40Xml, buildCfdi40Txt } = require('../helpers/cfdiBuilder');
 const crypto = require('crypto');
 const geminiService = require('../services/geminiService');
 
-const INVOICE_ATTACHMENT_DIR = path.join(__dirname, '..', '..', 'public', 'invoices');
-const invoiceDiskStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        if (!fs.existsSync(INVOICE_ATTACHMENT_DIR)) {
-            fs.mkdirSync(INVOICE_ATTACHMENT_DIR, { recursive: true });
-        }
-        cb(null, INVOICE_ATTACHMENT_DIR);
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        cb(null, `invoice-${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
-    }
-});
+// 👇 IMPORTAMOS EL SERVICIO DE S3
+const { uploadFile } = require('../services/s3Service');
 
-// ⚠️ MIDDLEWARE NUEVO: Espera el campo 'invoiceAttachment'
-const invoiceAttachmentMiddleware = multer({ storage: invoiceDiskStorage }).single('invoiceAttachment');
+// ⚠️ CONFIGURACIÓN MULTER: Usamos memoria (Buffer) en lugar de disco
+const storage = multer.memoryStorage();
+
+// Middlewares de carga
+const invoiceAttachmentMiddleware = multer({ storage: storage }).single('invoiceAttachment');
+const imageUploadMiddleware = multer({ storage: storage }).single('validationImage');
+
 /**
- * GET Invoice by ID
+ * HELPER: Descargar archivo de S3 a /tmp
+ * Necesario porque Gemini espera una ruta de archivo físico ('path'),
+ * y en Lambda solo podemos escribir en /tmp.
+ */
+const downloadFileToTemp = async (url, fileName) => {
+    try {
+        const tempPath = path.join(os.tmpdir(), fileName);
+        const writer = fs.createWriteStream(tempPath);
+
+        const response = await axios({
+            url,
+            method: 'GET',
+            responseType: 'stream'
+        });
+
+        response.data.pipe(writer);
+
+        return new Promise((resolve, reject) => {
+            writer.on('finish', () => resolve(tempPath));
+            writer.on('error', reject);
+        });
+    } catch (error) {
+        throw new Error(`Error descargando archivo temporal para IA: ${error.message}`);
+    }
+};
+
+/**
+ * OBTENER FACTURA POR ID
  */
 const getInvoice = async (req, res) => {
     try {
         const { id } = req.params;
-
         const invoice = await Invoice.findByPk(id, {
-            // Excluir campos de sistema en la respuesta
             attributes: { exclude: ['deleted_at'] }
         });
 
-        if (!invoice) {
-            return res.status(404).json({ code: 0, message: 'Factura no encontrada.' });
-        }
+        if (!invoice) return res.status(404).json({ code: 0, message: 'Factura no encontrada.' });
 
         res.status(200).json({ code: 1, invoice });
     } catch (error) {
-        console.error('Error al obtener factura por ID:', error);
+        console.error('Error al obtener factura:', error);
         res.status(500).json({ code: 0, error: 'Fallo al obtener la factura.' });
     }
 };
 
+/**
+ * OBTENER TODAS LAS FACTURAS
+ */
 const getInvoices = async (req, res) => {
     try {
         const invoices = await Invoice.findAll({
-            attributes: { exclude: ['deleted_at', 'updated_at'] } // Excluye campos de sistema para limpieza
+            attributes: { exclude: ['deleted_at', 'updated_at'] }
         });
         res.status(200).json({ code: 1, invoices });
     } catch (error) {
@@ -64,28 +85,28 @@ const getInvoices = async (req, res) => {
     }
 };
 
+/**
+ * CREAR FACTURA (Sube adjunto a S3)
+ */
 const postInvoice = async (req, res) => {
-    // Si la subida de Multer fue exitosa, req.file.path tiene la ruta de disco.
-    const filePath = req.file ? req.file.path : null; 
     try {
         const fileAttachment = req.file; 
         let invoiceData = req.body;
         
-        // 1. Lógica de Subida Opcional: Adjuntar la URL pública
+        // 1. Subir a S3 si hay archivo
         if (fileAttachment) {
-            const publicPath = `/invoices/${fileAttachment.filename}`;
+            const timestamp = Date.now();
+            const fileName = `invoice-${timestamp}-${fileAttachment.originalname}`;
+            const s3Url = await uploadFile(fileName, fileAttachment.buffer, fileAttachment.mimetype);
             
-            // ✅ CORRECCIÓN: Usar el nombre de columna 'file'
-            invoiceData.file = fileAttachment.filename; 
+            invoiceData.file = s3Url; // Guardamos la URL de S3
         } else {
-             // Si no hay archivo, asegúrate de que la columna reciba NULL
              invoiceData.file = null;
         }
 
-        // 2. Crear el nuevo registro en la base de datos
+        // 2. Guardar en BD
         const newInvoice = await Invoice.create(invoiceData);
 
-        // 3. Éxito: El archivo ya está guardado permanentemente
         res.status(201).json({ 
             code: 1, 
             message: 'Factura creada exitosamente', 
@@ -94,56 +115,32 @@ const postInvoice = async (req, res) => {
     
     } catch (error) {
         console.error('Error al crear factura:', error);
-        
-        // 4. LIMPIEZA CRÍTICA: Eliminar el archivo del disco si la inserción en DB falla
-        if (filePath && fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath); 
-        }
-        
-        // Manejo de errores
         res.status(400).json({ code: 0, error: 'Fallo al crear la factura.' });
     }
 };
 
+/**
+ * ACTUALIZAR FACTURA
+ */
 const updateInvoice = async (req, res) => {
-    // 1. Obtener la ruta temporal del nuevo archivo para limpieza en caso de fallo
-    const newFilePath = req.file ? req.file.path : null; 
-    
     try {
         const { id } = req.params;
-        const file = req.file; // Archivo subido por Multer (opcional)
-        let dataToUpdate = req.body; // Datos de texto/formulario
+        const file = req.file; 
+        let dataToUpdate = req.body;
 
-        // 2. Buscar el registro de la factura
         const invoice = await Invoice.findByPk(id);
+        if (!invoice) return res.status(404).json({ code: 0, message: 'Factura no encontrada.' });
 
-        if (!invoice) {
-            return res.status(404).json({ code: 0, message: 'Factura no encontrada para actualizar.' });
-        }
-
-        // 3. LÓGICA DE ARCHIVO ADJUNTO (Actualización Opcional)
+        // 1. Subir nuevo archivo a S3 si existe
         if (file) {
-            // A. Construir la ruta pública
-            const publicPath = `/invoices/${file.filename}`;
+            const timestamp = Date.now();
+            const fileName = `invoice-${timestamp}-${file.originalname}`;
+            const s3Url = await uploadFile(fileName, file.buffer, file.mimetype);
             
-            // B. Guardar la nueva ruta en los datos a actualizar
-            dataToUpdate.file = file.filename; 
-
-            // C. Limpieza del archivo antiguo (Si ya existía un adjunto)
-            if (invoice.file) {
-                // Generar la ruta absoluta del archivo antiguo
-                const oldDiskPath = path.join(__dirname, '..', '..', 'public', invoice.file);
-                
-                if (fs.existsSync(oldDiskPath)) {
-                    fs.unlinkSync(oldDiskPath); // Eliminar el archivo antiguo del disco
-                    console.log(`[LIMPIEZA] Archivo adjunto antiguo eliminado: ${invoice.file}`);
-                }
-            }
+            dataToUpdate.file = s3Url; 
         }
-        // Nota: Si el usuario envía un archivo, Multer ya lo guardó en disco.
-        
 
-        // 4. Actualizar las propiedades en memoria y guardar en DB
+        // 2. Actualizar BD
         invoice.set(dataToUpdate);
         await invoice.save(); 
 
@@ -151,26 +148,19 @@ const updateInvoice = async (req, res) => {
         
     } catch (error) {
         console.error('Error al actualizar factura:', error);
-        
-        // 5. LIMPIEZA CRÍTICA: Si la BD falla, eliminar el archivo nuevo subido
-        if (newFilePath && fs.existsSync(newFilePath)) {
-            fs.unlinkSync(newFilePath);
-            console.log(`[LIMPIEZA] Archivo subido (temporal) eliminado por fallo de DB.`);
-        }
-        
         res.status(500).json({ code: 0, error: 'Fallo al actualizar la factura.' });
     }
 };
 
-
+/**
+ * ELIMINAR FACTURA (Soft Delete)
+ */
 const destroyInvoice = async (req, res) => {
     try {
         const { id } = req.params;
         const result = await Invoice.destroy({ where: { id } });
 
-        if (result === 0) {
-            return res.status(404).json({ code: 0, message: 'Factura no encontrada para eliminar.' });
-        }
+        if (result === 0) return res.status(404).json({ code: 0, message: 'Factura no encontrada.' });
 
         res.status(200).json({ code: 1, message: 'Factura eliminada correctamente.' });
     } catch (error) {
@@ -179,421 +169,228 @@ const destroyInvoice = async (req, res) => {
     }
 };
 
+/**
+ * RESTAURAR FACTURA
+ */
 const restoreInvoice = async (req, res) => {
     try {
         const { id } = req.params;
+        const result = await Invoice.restore({ where: { id } });
 
-        // El método restore() busca el ID y establece deleted_at a NULL.
-        const result = await Invoice.restore({
-            where: { id }
-        });
+        if (result === 0) return res.status(404).json({ code: 0, message: 'Factura no encontrada o activa.' });
 
-        if (result === 0) {
-            return res.status(404).json({
-                code: 0,
-                message: 'Factura no encontrada o ya está activa.'
-            });
-        }
-
-        res.status(200).json({
-            code: 1,
-            message: 'Factura restaurada exitosamente.'
-        });
-
+        res.status(200).json({ code: 1, message: 'Factura restaurada exitosamente.' });
     } catch (error) {
         console.error('Error al restaurar factura:', error);
         res.status(500).json({ code: 0, error: 'Fallo al restaurar la factura.' });
     }
 };
 
+/**
+ * OBTENER ELIMINADAS
+ */
 const getDeletedInvoices = async (req, res) => {
     try {
         const deletedInvoices = await Invoice.findAll({
             paranoid: false, 
-            where: {
-                deleted_at: {
-                    [Op.not]: null // <--- ¡CAMBIAR A Op.not! Esto es más robusto para IS NOT NULL
-                }
-            },
+            where: { deleted_at: { [Op.not]: null } },
             attributes: { exclude: ['updated_at', 'created_at'] }
         });
         
-        res.status(200).json({
-            code: 1,
-            invoices: deletedInvoices,
-        });
+        res.status(200).json({ code: 1, invoices: deletedInvoices });
     } catch (error) {
-        console.error('Error al obtener facturas eliminadas:', error);
-        res.status(500).json({
-            code: 0,
-            error: "Ha ocurrido un error inesperado. Intente nuevamente."
-        });
+        console.error('Error al obtener eliminadas:', error);
+        res.status(500).json({ code: 0, error: "Error inesperado." });
     }
 };
 
-
+/**
+ * VALIDAR CÓDIGO Y SUBIR IMAGEN DE PAGO (S3)
+ */
 const validateCodeAndImage = async (req, res) => {
     const file = req.file; 
     const { code } = req.body;
     
-    // Ruta que Multer guardó en el disco
-    let filePath = file ? file.path : null; 
-    
-    // Ruta pública que se guardará en la base de datos
-    let publicPath = null;
-
-    // Calcular la ruta pública (ej: /validation_images/nombre-unico.jpg)
-    if (file && file.filename) {
-        publicPath = `/validation_images/${file.filename}`; 
-    }
-
     try {
-        // 1. Validación de entrada
-        if (!code || !file) {
-            return res.status(400).json({ code: 0, message: 'Se requiere el código de validación y la imagen.' });
-        }
+        if (!code || !file) return res.status(400).json({ code: 0, message: 'Faltan datos.' });
 
-        // 2. Buscar y validar el código
         const reminderRecord = await ReminderCode.findOne({
-            where: {
-                code: code,
-                used: false,
-                deleted_at: { [Op.eq]: null }
-            }
+            where: { code: code, used: false, deleted_at: { [Op.eq]: null } }
         });
 
-        if (!reminderRecord) {
-            // El código es inválido. Limpiamos la imagen y retornamos.
-            if (filePath && fs.existsSync(filePath)) { fs.unlinkSync(filePath); }
-            return res.status(404).json({ code: 0, message: 'Código inválido o ya utilizado.' });
-        }
+        if (!reminderRecord) return res.status(404).json({ code: 0, message: 'Código inválido.' });
         
-        // 3. Actualizar el registro: Marcar como usado y guardar la RUTA PÚBLICA PERMANENTE
-        await reminderRecord.update({
-            used: true,
-            image: file.filename // Guardamos la ruta pública
-        });
+        // 1. Subir Imagen a S3
+        const timestamp = Date.now();
+        const ext = path.extname(file.originalname);
+        const fileName = `validation-${code}-${timestamp}${ext}`;
+        const s3Url = await uploadFile(fileName, file.buffer, file.mimetype);
 
+        // 2. Guardar URL en BD
+        await reminderRecord.update({ used: true, image: s3Url });
+
+        // 3. Notificación (Email)
         let invoice_info = await Invoice.findByPk(reminderRecord.id_invoice);
+        /* const emailBody = `...HTML... <a href="${s3Url}">Ver Comprobante</a>`;
+        await sendEmail('fresendiz@fabricadesoluciones.com', 'Comprobante Recibido', emailBody); 
+        */
 
-        // 4. CLAVE: ENVIAR EL CORREO DE NOTIFICACIÓN
-        const clientEmail = 'fresendiz@fabricadesoluciones.com'; // Dirección de correo del administrador o destino
-        const subject = `Orion - Comprobante de pago recibido`;
-        const emailBody = `
-            <h1>Comprobante de pago recibido</h1>
-            <p>El cliente <strong>${invoice_info.name}</strong>, ha compartido un comprobante de pago, puedes revisarlo en el sistema.</p>
-            <p>Fecha de Recepción: ${new Date().toLocaleString()}</p>
-        `;
-        
-        // Ejecutar el envío de correo (asumo que tu helper se llama sendEmail o sendPasswordResetEmail)
-        // Usamos una función genérica que acepta el destino, asunto y cuerpo HTML
-        //await sendEmail(clientEmail, subject, emailBody);
-
-
-        // 5. Respuesta de éxito
         res.status(200).json({
             code: 1,
-            message: 'Código validado y notificado exitosamente.',
-            image_url: publicPath, 
+            message: 'Validado exitosamente.',
+            image_url: s3Url, 
             record: reminderRecord
         });
 
     } catch (error) {
         console.error('[ERROR] [validateCodeAndImage]', error);
-        
-        // 6. LIMPIEZA CRÍTICA: Si la BD o el ENVÍO de correo fallan, eliminamos el archivo.
-        if (filePath && fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            console.log(`[LIMPIEZA] Imagen eliminada por fallo en BD o envío de correo: ${filePath}`);
-        }
-
-        res.status(500).json({ code: 0, error: "Fallo en el proceso de validación. (Verifique logs)" });
+        res.status(500).json({ code: 0, error: "Fallo en validación." });
     }
-    // No se necesita el bloque finally
 };
 
-const diskStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '..', '..', 'public', 'validation_images'); 
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir); 
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        const uniqueName = `${path.basename(file.originalname, ext)}-${Date.now()}${ext}`;
-        cb(null, uniqueName);
-    }
-});
-
+/**
+ * OBTENER CÓDIGOS POR FACTURA
+ */
 const getCodesByInvoice = async (req, res) => {
     try {
-        const { id } = req.params; // Obtener el ID de la factura desde la URL
-
-        // Usar findAll con una cláusula WHERE para filtrar por id_invoice
+        const { id } = req.params; 
         const codes = await ReminderCode.findAll({
-            where: {
-                id_invoice: id
-            },
-            attributes: ['id', 'code', 'used', 'image', 'created_at'] // Excluir campos sensibles/redundantes
+            where: { id_invoice: id },
+            attributes: ['id', 'code', 'used', 'image', 'created_at'] 
         });
 
-        if (codes.length === 0) {
-            return res.status(404).json({ 
-                code: 0, 
-                message: `No se encontraron códigos para la factura ID: ${id}.` 
-            });
-        }
+        if (codes.length === 0) return res.status(404).json({ code: 0, message: `Sin códigos.` });
 
-        res.status(200).json({
-            code: 1,
-            count: codes.length,
-            codes: codes
-        });
-
+        res.status(200).json({ code: 1, count: codes.length, codes: codes });
     } catch (error) {
-        console.error('[ERROR] [getCodesByInvoice]', error);
-        res.status(500).json({ 
-            code: 0, 
-            error: "Fallo en el proceso de obtención de códigos." 
-        });
+        res.status(500).json({ code: 0, error: "Fallo al obtener códigos." });
     }
 };
 
-const imageUploadMiddleware = multer({ storage: diskStorage }).single('validationImage');
-
-//Validar pago humano o IA
-const updatePaymentStatus = async (req, res) => {
-    const { reminder_id, status } = req.body;
-    
-    const finalStatus = status?.toUpperCase();
-    if (!reminder_id || (finalStatus !== 'ACEPTADO' && finalStatus !== 'RECHAZADO')) {
-        return res.status(400).json({ code: 0, message: 'Se requiere reminder_id y un estado válido ("ACEPTADO" o "RECHAZADO").' });
-    }
-
-    let transaction;
-    let filePath = null; // Necesario para la limpieza de disco en caso de fallo
-
-    try {
-        // 1. INICIO DE TRANSACCIÓN
-        transaction = await sequelize.transaction();
-
-        // A. Buscar SOLO el registro de ReminderCode (sin INCLUDE)
-        const reminderRecord = await ReminderCode.findByPk(reminder_id, { transaction });
-
-        if (!reminderRecord) {
-            await transaction.rollback();
-            return res.status(404).json({ code: 0, message: 'Registro de código no encontrado.' });
-        }
-        
-        // B. Buscar la Factura en un paso SEPARADO
-        const invoice = await Invoice.findByPk(reminderRecord.id_invoice, { transaction });
-
-        if (!invoice) {
-            await transaction.rollback();
-            return res.status(404).json({ code: 0, message: 'Factura asociada no encontrada.' });
-        }
-        const publicImagePath = reminderRecord.image;
-        // 3. Lógica de Actualización
-        if (finalStatus === 'ACEPTADO') {
-            const imageDiskPath = path.join(__dirname, '..', '..', 'public/validation_images', publicImagePath); 
-
-            // 2. Validar que la imagen aún exista en el disco
-            if (!fs.existsSync(imageDiskPath)) {
-                await transaction.rollback();
-                return res.status(404).json({ code: 0, message: 'El comprobante de imagen no se encuentra en el servidor.' });
-            }
-
-            const extractedAmount = await geminiService.analyzeImageAndExtractAmount(
-                imageDiskPath, // <--- RUTA DE DISCO FINAL
-                'image/jpeg',  // <--- Asumimos un mimeType genérico para la IA
-                path.basename(imageDiskPath), // Usamos el nombre del archivo
-                "Identifica el monto exacto de este comprobante."
-            );
-
-            // 2. Validación CRÍTICA: Asegurar que la IA devolvió un monto válido (> 0)
-            if (extractedAmount <= 0) {
-                // Si la IA no encontró el monto, cancelamos la transacción y avisamos al usuario.
-                // Esto previene que se registren pagos de $0.00.
-                await transaction.rollback();
-                // Limpieza de disco si es necesario (ya que el archivo fue subido)
-                if (filePath && fs.existsSync(filePath)) { fs.unlinkSync(filePath); }
-
-                return res.status(400).json({
-                    code: 0,
-                    message: 'Validación fallida: No se pudo extraer un monto de pago válido del comprobante. Revise el formato de la imagen.',
-                });
-            }
-
-            // 3. CREAR REGISTRO EN EL HISTORIAL DE PAGOS con el monto de la IA
-            await PaymentHistory.create({
-                invoiceId: invoice.id,
-                paymentDate: new Date(),
-                // ✅ CLAVE: Usar el monto extraído de la IA
-                amount: extractedAmount, 
-                paymentMethod: 'IA/Comprobante Digital',
-                description: `Comprobante validado con código ${reminderRecord.code}. Monto extraído: ${extractedAmount}`,
-                confirmation_status: 'ÉXITO'
-            }, { transaction });
-            
-            // B. Actualizar el estado de la factura a Pagada
-            await invoice.update({ status: 'Pagada' }, { transaction });
-
-            // C. Marcar el código de recordatorio como usado
-            await reminderRecord.update({ used: true, completed_at: new Date() }, { transaction });
-            
-            
-
-        } else if (finalStatus === 'RECHAZADO') {
-            // D. PAGO RECHAZADO: Permite el reintento
-            // await reminderRecord.update({ 
-            //     used: false, 
-            //     image: null, // Limpiar la referencia de la imagen
-            // }, { transaction }); 
-        }
-
-        // 4. CONFIRMAR
-        await transaction.commit();
-
-        res.status(200).json({
-            code: 1,
-            message: `Revisión completada. Factura #${invoice.id} marcada como ${finalStatus}.`,
-            invoice_status: finalStatus
-        });
-
-    } catch (error) {
-        if (transaction) await transaction.rollback();
-        console.error('[ERROR] [updatePaymentStatus]', error);
-        
-        // ⚠️ Nota: La limpieza del archivo local es compleja aquí, ya que la ruta no se conoce si el fallo es temprano.
-        // Asumiendo que el archivo de imagen es permanente, lo omitimos en el rollback de error.
-        
-        res.status(500).json({ code: 0, error: "Fallo interno en la actualización de estado. Transacción revertida." });
-    }
-};
-
-
+/**
+ * OBTENER TODOS LOS CÓDIGOS
+ */
 const getAllReminderCodes = async (req, res) => {
     try {
         const codes = await ReminderCode.findAll({
-            // 1. Ordenar por 'id' en orden descendente (DESC)
-            order: [
-                ['id', 'DESC']
-            ],
-            // 2. Seleccionar solo los campos relevantes del ReminderCode
-            attributes: [
-                'id', 
-                'id_invoice', 
-                'code', 
-                'used', 
-                'image', 
-                'created_at'
-            ],
-            // 3. INCLUSIÓN ANIDADA
+            order: [['id', 'DESC']],
+            attributes: ['id', 'id_invoice', 'code', 'used', 'image', 'created_at'],
             include: [{
                 model: Invoice,
-                as: 'invoice', // Alias de ReminderCode a Invoice (confirmado previamente)
-                attributes: ['id'], // Solo necesitamos el ID de la factura (o los que necesites)
-                required: true, // Opcional: Solo trae códigos que SÍ tienen factura
-                
-                // INCLUSIÓN ANIDADA: Obtener el Cliente de la Factura
-                include: [{
-                    // ✅ Asegúrate de que este sea el nombre de tu modelo Client
-                    model: Client, 
-                    // ✅ Asegúrate de que este sea el alias definido en Invoice.belongsTo(Client)
-                    as: 'client', 
-                    // ✅ Selecciona solo el nombre del cliente
-                    attributes: ['name'] 
-                }]
+                as: 'invoice', 
+                attributes: ['id'], 
+                required: true, 
+                include: [{ model: Client, as: 'client', attributes: ['name'] }]
             }]
         });
 
-        res.status(200).json({
-            code: 1,
-            count: codes.length,
-            message: "Códigos de recordatorio obtenidos exitosamente.",
-            codes: codes
-        });
-
+        res.status(200).json({ code: 1, count: codes.length, codes: codes });
     } catch (error) {
-        console.error('[ERROR] [getAllReminderCodes]', error);
-        res.status(500).json({ 
-            code: 0, 
-            error: "Fallo al obtener la lista de códigos de recordatorio." 
-        });
+        res.status(500).json({ code: 0, error: "Fallo al listar códigos." });
     }
 };
 
 const getReminderCodeById = async (req, res) => {
     try {
-        // 1. Obtener el ID de la ruta
         const { id } = req.params; 
+        const codeRecord = await ReminderCode.findByPk(id);
 
-        // 2. Buscar por ID primario
-        const codeRecord = await ReminderCode.findByPk(id, {
-            attributes: [
-                'id', 
-                'id_invoice', 
-                'code', 
-                'used', 
-                'image', 
-                'created_at'
-            ]
-        });
+        if (!codeRecord) return res.status(404).json({ code: 0, message: 'No encontrado.' });
 
-        if (!codeRecord) {
-            return res.status(404).json({ code: 0, message: 'Código de recordatorio no encontrado.' });
-        }
-
-        res.status(200).json({
-            code: 1,
-            message: "Código de recordatorio obtenido exitosamente.",
-            code_record: codeRecord
-        });
-
+        res.status(200).json({ code: 1, code_record: codeRecord });
     } catch (error) {
-        console.error('[ERROR] [getReminderCodeById]', error);
-        res.status(500).json({ 
-            code: 0, 
-            error: "Fallo al obtener el código de recordatorio." 
-        });
+        res.status(500).json({ code: 0, error: "Error al buscar código." });
     }
 };
 
+/**
+ * VALIDAR PAGO CON IA (Soporte S3)
+ */
+const updatePaymentStatus = async (req, res) => {
+    const { reminder_id, status } = req.body;
+    const finalStatus = status?.toUpperCase();
+
+    if (!reminder_id || (finalStatus !== 'ACEPTADO' && finalStatus !== 'RECHAZADO')) {
+        return res.status(400).json({ code: 0, message: 'Datos inválidos.' });
+    }
+
+    let transaction;
+    let tempFilePath = null;
+
+    try {
+        transaction = await sequelize.transaction();
+
+        const reminderRecord = await ReminderCode.findByPk(reminder_id, { transaction });
+        if (!reminderRecord) throw new Error('Código no encontrado.');
+        
+        const invoice = await Invoice.findByPk(reminderRecord.id_invoice, { transaction });
+        if (!invoice) throw new Error('Factura no encontrada.');
+
+        if (finalStatus === 'ACEPTADO') {
+            const publicImageUrl = reminderRecord.image; // URL de S3
+            if (!publicImageUrl) throw new Error('Sin imagen asociada.');
+
+            // 1. Descargar imagen de S3 a /tmp para que Gemini la lea
+            const fileName = path.basename(publicImageUrl);
+            tempFilePath = await downloadFileToTemp(publicImageUrl, fileName);
+
+            // 2. Analizar con Gemini
+            const extractedAmount = await geminiService.analyzeImageAndExtractAmount(
+                tempFilePath, // Ruta local temporal
+                'image/jpeg', 
+                fileName, 
+                "Identifica el monto exacto."
+            );
+
+            // Limpieza inmediata
+            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+
+            if (extractedAmount <= 0) {
+                await transaction.rollback();
+                return res.status(400).json({ code: 0, message: 'IA no detectó monto válido.' });
+            }
+
+            // 3. Registrar Pago
+            await PaymentHistory.create({
+                invoiceId: invoice.id,
+                paymentDate: new Date(),
+                amount: extractedAmount, 
+                paymentMethod: 'IA/Comprobante',
+                description: `Validado con código ${reminderRecord.code}`,
+                confirmation_status: 'ÉXITO'
+            }, { transaction });
+            
+            await invoice.update({ status: 'Pagada' }, { transaction });
+            await reminderRecord.update({ used: true, completed_at: new Date() }, { transaction });
+        } 
+
+        await transaction.commit();
+        res.status(200).json({ code: 1, message: `Factura marcada como ${finalStatus}.` });
+
+    } catch (error) {
+        if (transaction) await transaction.rollback();
+        if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        
+        console.error('[ERROR] [updatePaymentStatus]', error);
+        res.status(500).json({ code: 0, error: error.message || "Fallo en validación de pago." });
+    }
+};
+
+/**
+ * GENERAR TXT (CFDI)
+ */
 const generateInvoiceTxt = async (req, res) => {
     try {
         const { id } = req.params;
-
-        // 1. Buscar la factura por ID en la DB
         const invoiceRecord = await Invoice.findByPk(id);
 
-        if (!invoiceRecord) {
-            return res.status(404).json({
-                code: 0,
-                message: `Factura ID ${id} no encontrada.`
-            });
-        }
+        if (!invoiceRecord) return res.status(404).json({ code: 0, message: 'No encontrada.' });
         
-        // Convertir el objeto Sequelize a JSON simple para el helper
-        const invoiceData = invoiceRecord.toJSON(); 
+        const cfdiTxtString = buildCfdi40Txt(invoiceRecord.toJSON());
 
-        // 2. Generar la cadena de texto plano TXT
-        const cfdiTxtString = buildCfdi40Txt(invoiceData);
-
-        // 3. Devolver la respuesta (puedes devolver el texto puro para depuración)
-        res.status(200).json({
-            code: 1,
-            message: `TXT CFDI 4.0 generado para Factura ID ${id}.`,
-            data: cfdiTxtString
-        });
-
+        res.status(200).json({ code: 1, message: 'TXT generado.', data: cfdiTxtString });
     } catch (error) {
-        console.error('Error al generar TXT de factura:', error);
-        res.status(500).json({
-            code: 0,
-            error: error.message || 'Fallo interno al generar el archivo TXT.'
-        });
+        res.status(500).json({ code: 0, error: 'Fallo al generar TXT.' });
     }
 };
 
