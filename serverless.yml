@@ -5,22 +5,38 @@ provider:
   name: aws
   runtime: nodejs18.x
   region: us-east-1
-  memorySize: 512 # Memoria extra para procesar Excel/PDF
-  timeout: 29     # Tiempo máximo para la API (API Gateway límite)
+  memorySize: 512
+  timeout: 29
   environment:
-    # Estas variables se inyectarán en la Lambda
     NODE_ENV: production
+    # Variables de Base de Datos
     DB_HOST: ${env:DB_HOST}
     DB_USER_PRODUCTION: ${env:DB_USER_PRODUCTION}
     DB_PASSWORD_PRODUCTION: ${env:DB_PASSWORD_PRODUCTION}
     DB_NAME_PRODUCTION: ${env:DB_NAME_PRODUCTION}
-    # Asegúrate de pasar estas también en el comando de deploy:
+    # Variables de Seguridad y APIs
+    JWT_SECRET: ${env:JWT_SECRET}      # <--- ¡Ojo! La agregué porque es vital para el Login
     GEMINI_API_KEY: ${env:GEMINI_API_KEY}
     EMAIL_USER: ${env:EMAIL_USER}
     EMAIL_PASS: ${env:EMAIL_PASS}
+    # 👇 NUEVO: Variable del Bucket S3
+    S3_BUCKET_NAME: ${env:S3_BUCKET_NAME}
+
+  # 👇 NUEVO: Permisos IAM dinámicos (Permite escribir en el bucket que definas)
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:ListBucket
+          # Aquí usamos la variable también para no hardcodear el nombre
+          Resource:
+            - "arn:aws:s3:::${env:S3_BUCKET_NAME}/*" # Para tocar archivos
+            - "arn:aws:s3:::${env:S3_BUCKET_NAME}"   # Para listar el bucket en sí
 
 functions:
-  # 1. La API Express (Backend)
   api:
     handler: src/index.handler
     events:
@@ -33,15 +49,7 @@ functions:
           method: ANY
           cors: true
 
-  # 2. El Cronjob de Cobranza (Separado para que sea confiable)
-  # OJO: Asegúrate de que schedulerService.js tenga una función exportada llamada 'runDailyJob'
-  # Si no la tienes separada, comenta esta sección 'scheduler' por ahora para no bloquear el deploy.
-  # scheduler:
-  #   handler: src/services/schedulerService.runDailyJob 
-  #   events:
-  #     - schedule: cron(0 14 * * ? *) # 8:00 AM Hora CDMX (UTC-6)
-
-# Exclusión de archivos para subir rápido
+# Exclusión de archivos
 package:
   patterns:
     - '!node_modules/sequelize-cli/**'

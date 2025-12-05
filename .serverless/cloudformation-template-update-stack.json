@@ -134,6 +134,18 @@
                       "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/rak-orion-backend-dev*:*:*"
                     }
                   ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:PutObject",
+                    "s3:GetObject",
+                    "s3:ListBucket"
+                  ],
+                  "Resource": [
+                    "arn:aws:s3:::rak-orion-reports-pd/*",
+                    "arn:aws:s3:::rak-orion-reports-pd"
+                  ]
                 }
               ]
             }
@@ -162,7 +174,7 @@
           "S3Bucket": {
             "Ref": "ServerlessDeploymentBucket"
           },
-          "S3Key": "serverless/rak-orion-backend/dev/1764879052013-2025-12-04T20:10:52.013Z/rak-orion-backend.zip"
+          "S3Key": "serverless/rak-orion-backend/dev/1764966686743-2025-12-05T20:31:26.743Z/rak-orion-backend.zip"
         },
         "Handler": "src/index.handler",
         "Runtime": "nodejs18.x",
@@ -176,9 +188,11 @@
             "DB_USER_PRODUCTION": "admin",
             "DB_PASSWORD_PRODUCTION": "1lS+e8&=OP1O",
             "DB_NAME_PRODUCTION": "rak_orion_db",
+            "JWT_SECRET": "qFqGXz8Zc!5X3froq7qk!kjdnaAsRIGh&Ht^r5m#pSZo@",
             "GEMINI_API_KEY": "AIzaSyAcVX21YgDN9pSAtuLFqCxwtilMiatMSi4",
             "EMAIL_USER": "horus@fabricadesoluciones.com",
-            "EMAIL_PASS": "1-Mx8VR1hPQIRcTsqtBsvQ"
+            "EMAIL_PASS": "1-Mx8VR1hPQIRcTsqtBsvQ",
+            "S3_BUCKET_NAME": "rak-orion-reports-pd"
           }
         },
         "Role": {
@@ -192,14 +206,14 @@
         "ApiLogGroup"
       ]
     },
-    "ApiLambdaVersionprzPqqxks6LsBjbxXmg5iKX9HaF6SFCxny4nemQ": {
+    "ApiLambdaVersiontfDHAp7Bkn6IV21u5Cpn6vZNjJpsUPRWPuwZPaWUPM": {
       "Type": "AWS::Lambda::Version",
       "DeletionPolicy": "Retain",
       "Properties": {
         "FunctionName": {
           "Ref": "ApiLambdaFunction"
         },
-        "CodeSha256": "FoPvimgfbkqSg+vWIVgQETp4tty7L84SSu89NO5LVpM="
+        "CodeSha256": "GQnLKzHYySDRb9PpEmq+lRNTgWWqtQKE+tHOtEkQcJ0="
       }
     },
     "ApiGatewayRestApi": {
@@ -417,7 +431,7 @@
         "ApiLambdaPermissionApiGateway"
       ]
     },
-    "ApiGatewayDeployment1764879045362": {
+    "ApiGatewayDeployment1764966675663": {
       "Type": "AWS::ApiGateway::Deployment",
       "Properties": {
         "RestApiId": {
@@ -482,7 +496,7 @@
     "ApiLambdaFunctionQualifiedArn": {
       "Description": "Current Lambda function version",
       "Value": {
-        "Ref": "ApiLambdaVersionprzPqqxks6LsBjbxXmg5iKX9HaF6SFCxny4nemQ"
+        "Ref": "ApiLambdaVersiontfDHAp7Bkn6IV21u5Cpn6vZNjJpsUPRWPuwZPaWUPM"
       },
       "Export": {
         "Name": "sls-rak-orion-backend-dev-ApiLambdaFunctionQualifiedArn"

@@ -1,111 +1,96 @@
 const invoiceReportsService = require("../services/invoiceReportsService");
-const paymentFollowUpService = require("../services/paymentFollowUpService"); // Reusa la lógica de estatus
+const paymentFollowUpService = require("../services/paymentFollowUpService"); 
 const { response } = require("../utils/handleResponse");
 
 /**
  * 1. GET /api/invoiceReports/data
- * Obtiene la lista de facturas con estatus calculado, con soporte para filtros.
+ * Obtiene la lista de facturas para mostrar en tabla antes de exportar.
  */
 const getInvoicesReportData = async (req, res) => {
-  // Usamos el servicio de pagos directamente, ya que el portafolio es la fuente de datos
   try {
+    // Reusamos la lógica de cartera que ya filtra y calcula estatus
     const portfolio = await paymentFollowUpService.getFollowUpPortfolio();
-
-    // El servicio de portafolio ya filtra y calcula los estatus
     response.succes(res, portfolio, 200);
   } catch (error) {
-    console.error("[ERROR] [InvoiceReports] [getInvoicesReportData]", error);
+    console.error("[ERROR] [InvoiceReports] [Data]", error);
     response.error(res, "Error al obtener datos para el reporte.", 500);
   }
 };
 
 /**
  * 2. POST /api/invoiceReports/xls
- * Genera el XLS, sube a S3 (simulación) y usa IA.
+ * Genera el XLS, lo sube a AWS S3 y devuelve la URL pública.
  */
 const generateAndUploadXLS = async (req, res) => {
   try {
+    // El servicio ahora usará s3Service internamente
     const result = await invoiceReportsService.processInvoiceReport(req);
 
     if (!result.success) {
-      // Si el servicio devuelve success: false (ej: no hay facturas), enviamos 400 o 404
       return response.error(res, result.message, 400);
     }
 
-    // 202 Accepted: La tarea fue aceptada y se está procesando (o ya terminó en este caso)
-    response.succes(res, result, 202);
+    // Devolvemos la URL de S3 al frontend
+    response.succes(res, result, 200); 
   } catch (error) {
-    console.error("[ERROR] [InvoiceReports] [generateAndUploadXLS]", error);
-    response.error(res, "Error fatal al generar el reporte.", 500);
+    console.error("[ERROR] [InvoiceReports] [GenerateXLS]", error);
+    response.error(res, "Error fatal al generar el reporte S3.", 500);
   }
 };
 
 /**
  * 3. GET /api/invoiceReports/repo
- * Lista los archivos XLS subidos a S3 (simulación).
+ * Lista los archivos que existen realmente en el bucket S3.
  */
 const listRepositoryInvoices = async (req, res) => {
   try {
     const result = await invoiceReportsService.listUploadedReports();
-
     response.succes(res, result, 200);
   } catch (error) {
-    console.error("[ERROR] [InvoiceReports] [listRepositoryInvoices]", error);
-    response.error(res, "Error al listar el repositorio.", 500);
+    console.error("[ERROR] [InvoiceReports] [ListRepo]", error);
+    response.error(res, "Error al listar archivos de S3.", 500);
   }
 };
 
 /**
  * 4. GET /api/invoiceReports/aging
- * Obtiene el reporte de Antigüedad de Cuentas por Cobrar.
+ * Datos en crudo para el reporte de antigüedad (JSON).
  */
 const getAgingReport = async (req, res) => {
-  // Reutilizamos el servicio de reportes, pasándole los filtros (req.query)
   try {
-    const filters = req.query; // Captura date_from, date_to, etc.
+    const filters = req.query;
     const reportData = await invoiceReportsService.getAgingReportData(filters);
-
     response.succes(res, reportData, 200);
   } catch (error) {
-    console.error("[ERROR] [InvoiceReports] [getAgingReport]", error);
-    response.error(
-      res,
-      "Error al obtener el reporte de antigüedad de cuentas.",
-      500
-    );
+    console.error("[ERROR] [InvoiceReports] [AgingData]", error);
+    response.error(res, "Error al obtener reporte de antigüedad.", 500);
   }
 };
 
 /**
  * 5. POST /api/invoiceReports/aging/xls
- * Genera el archivo XLS del reporte de Antigüedad.
+ * Genera reporte de Antigüedad y sube a S3.
  */
 const generateAgingXLS = async (req, res) => {
   try {
-    const filters = req.query; // Pasa filtros al servicio
+    const filters = req.query;
     const result = await invoiceReportsService.processAgingReport(filters);
 
     if (!result.success) {
       return response.error(res, result.message, 400);
     }
-
-    response.succes(res, result, 202);
+    response.succes(res, result, 200);
   } catch (error) {
-    console.error("[ERROR] [InvoiceReports] [generateAgingXLS]", error);
-    response.error(
-      res,
-      "Error fatal al generar el reporte de antigüedad.",
-      500
-    );
+    console.error("[ERROR] [InvoiceReports] [AgingXLS]", error);
+    response.error(res, "Error generando reporte de antigüedad.", 500);
   }
 };
 
 /**
  * 6. GET /api/invoiceReports/aging/repo
- * Lista los archivos XLS del repositorio de Antigüedad.
+ * Reutiliza el listado del bucket.
  */
 const listAgingRepository = async (req, res) => {
-  // Reutilizamos el listado general de S3 Mock
   listRepositoryInvoices(req, res);
 };
 

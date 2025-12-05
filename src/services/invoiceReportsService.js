@@ -1,13 +1,9 @@
 const { Op, literal } = require("sequelize");
 const paymentFollowUpService = require("./paymentFollowUpService");
-const { generateXLSReport } = require("../utils/excelGenerator"); // Asumo que esto genera el XLS
-const { uploadToS3, listMockedReports } = require("../utils/s3Mock"); // Asumo que estos son tus helpers de S3
-const geminiService = require("./geminiService"); // Tu servicio/helper de conexión a la IA
-
-// *******************************************************************
-// NOTA: Se eliminan las redefiniciones de uploadToS3, generateXLSReport,
-// y la inicialización de AWS/Gemini. Ahora solo se usan los helpers importados.
-// *******************************************************************
+const { generateXLSReport } = require("../utils/excelGenerator");
+// 👇 CAMBIO 1: Importamos el nuevo servicio híbrido (S3 Real / Mock Local)
+const { uploadFile, listFiles } = require("./s3Service");
+const geminiService = require("./geminiService");
 
 /**
  * Función principal que orquesta la generación del Reporte de ESTADO, análisis y subida.
@@ -23,16 +19,19 @@ const processInvoiceReport = async (req) => {
     };
   }
 
-  // 2. Generar el archivo XLS (Buffer) - Usando el helper importado
+  // 2. Generar el archivo XLS (Buffer)
   const fileBuffer = await generateXLSReport(
     portfolioData,
     "Reporte de Estado"
   );
 
-  // 3. Simular la subida a S3 - Usando el helper importado
+  // 3. Subir a S3 (o Mock) - 👇 CAMBIO 2: Usamos uploadFile con mimeType
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const fileName = `reporte-facturas-${timestamp}.xlsx`;
-  const reportUrl = await uploadToS3(fileName, fileBuffer);
+  const mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  
+  // Esta función decide sola si usar AWS S3 (Prod) o Mock (Local)
+  const reportUrl = await uploadFile(fileName, fileBuffer, mimeType);
 
   // 4. Analizar el portafolio con IA
   const analysisResult = await analyzeReportWithAI(portfolioData);
@@ -47,20 +46,18 @@ const processInvoiceReport = async (req) => {
 };
 
 /**
- * 5. Endpoint para listar el repositorio (simulación)
+ * 5. Endpoint para listar el repositorio
  */
 const listUploadedReports = async () => {
-  // Usamos el helper de S3 Mock para listar los archivos.
-  // Esto ya está inicializado en index.js.
-  return listMockedReports();
+  // 👇 CAMBIO 3: Usamos el listado del servicio híbrido
+  return await listFiles();
 };
 
 /**
  * Lógica para calcular y agrupar la antigüedad de las cuentas por cobrar.
- * (Esta función DEBE estar en este servicio, ya que construye la estructura del reporte de antigüedad)
+ * (Se mantiene intacta tu lógica original)
  */
 const getAgingReportData = async (filters = {}) => {
-  // NOTA: La lógica de filtros y límite de 100 se delega al servicio de pagos.
   const portfolio = await paymentFollowUpService.getFollowUpPortfolio(filters);
   const today = new Date();
 
@@ -87,7 +84,7 @@ const getAgingReportData = async (filters = {}) => {
         agingRange: agingRange,
       };
     })
-    .filter((item) => item.saldoPendiente > 0); // Solo mostramos facturas con saldo
+    .filter((item) => item.saldoPendiente > 0);
 
   return agingData;
 };
@@ -107,16 +104,18 @@ const processAgingReport = async (filters) => {
     };
   }
 
-  // 2. Generar el archivo XLS - Usando el helper
+  // 2. Generar el archivo XLS
   const fileBuffer = await generateXLSReport(
     agingData,
     "Reporte de Antigüedad"
   );
 
-  // 3. Simular la subida a S3
+  // 3. Subir a S3 - 👇 CAMBIO 4: Usamos uploadFile con mimeType
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const fileName = `reporte-antiguedad-${timestamp}.xlsx`;
-  const reportUrl = await uploadToS3(fileName, fileBuffer);
+  const mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+  const reportUrl = await uploadFile(fileName, fileBuffer, mimeType);
 
   // 4. Analizar el portafolio con IA
   const analysisResult = await analyzeAgingReportWithAI(agingData);
@@ -131,7 +130,7 @@ const processAgingReport = async (filters) => {
 };
 
 /**
- * Realiza el análisis del reporte de Antigüedad.
+ * Realiza el análisis del reporte de Antigüedad (Lógica original mantenida).
  */
 const analyzeAgingReportWithAI = async (agingData) => {
   const simplifiedAgingData = agingData.map((item) => ({
@@ -142,7 +141,7 @@ const analyzeAgingReportWithAI = async (agingData) => {
     agingRange: item.agingRange,
   }));
 
-  const systemPrompt = `Eres un Analista de Riesgos Financieros experto... [código del prompt anterior]`;
+  const systemPrompt = `Eres un Analista de Riesgos Financieros experto que trabaja para RAK Orion. Tu objetivo es analizar la antigüedad de saldos y sugerir estrategias de cobranza.`;
 
   const userQuery = `Fecha actual: ${
     new Date().toISOString().split("T")[0]
@@ -153,7 +152,6 @@ const analyzeAgingReportWithAI = async (agingData) => {
   )}\n\`\`\``;
 
   try {
-    // USAMOS EL HELPER GEMINI
     const aiResponse = await geminiService.generateContent(
       systemPrompt,
       userQuery
@@ -166,7 +164,7 @@ const analyzeAgingReportWithAI = async (agingData) => {
 };
 
 /**
- * Realiza el análisis del Reporte de ESTADO.
+ * Realiza el análisis del Reporte de ESTADO (Lógica original mantenida).
  */
 const analyzeReportWithAI = async (reportData) => {
   const simplifiedData = reportData.map((item) => ({
@@ -176,7 +174,7 @@ const analyzeReportWithAI = async (reportData) => {
     due_date: new Date(item.due_date).toISOString().split("T")[0],
   }));
 
-  const systemPrompt = `Eres un Analista Financiero de RAK... [código del prompt anterior]`;
+  const systemPrompt = `Eres un Analista Financiero de RAK Orion. Tu trabajo es interpretar el estado de las facturas y dar un resumen ejecutivo.`;
 
   const userQuery = `Fecha de hoy: ${
     new Date().toISOString().split("T")[0]
