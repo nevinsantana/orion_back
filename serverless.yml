@@ -1,0 +1,50 @@
+service: rak-orion-backend
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  memorySize: 512 # Memoria extra para procesar Excel/PDF
+  timeout: 29     # Tiempo máximo para la API (API Gateway límite)
+  environment:
+    # Estas variables se inyectarán en la Lambda
+    NODE_ENV: production
+    DB_HOST: ${env:DB_HOST}
+    DB_USER_PRODUCTION: ${env:DB_USER_PRODUCTION}
+    DB_PASSWORD_PRODUCTION: ${env:DB_PASSWORD_PRODUCTION}
+    DB_NAME_PRODUCTION: ${env:DB_NAME_PRODUCTION}
+    # Asegúrate de pasar estas también en el comando de deploy:
+    GEMINI_API_KEY: ${env:GEMINI_API_KEY}
+    EMAIL_USER: ${env:EMAIL_USER}
+    EMAIL_PASS: ${env:EMAIL_PASS}
+
+functions:
+  # 1. La API Express (Backend)
+  api:
+    handler: src/index.handler
+    events:
+      - http:
+          path: /
+          method: ANY
+          cors: true
+      - http:
+          path: /{proxy+}
+          method: ANY
+          cors: true
+
+  # 2. El Cronjob de Cobranza (Separado para que sea confiable)
+  # OJO: Asegúrate de que schedulerService.js tenga una función exportada llamada 'runDailyJob'
+  # Si no la tienes separada, comenta esta sección 'scheduler' por ahora para no bloquear el deploy.
+  # scheduler:
+  #   handler: src/services/schedulerService.runDailyJob 
+  #   events:
+  #     - schedule: cron(0 14 * * ? *) # 8:00 AM Hora CDMX (UTC-6)
+
+# Exclusión de archivos para subir rápido
+package:
+  patterns:
+    - '!node_modules/sequelize-cli/**'
+    - '!.git/**'
+    - '!.env'
+    - '!tests/**'

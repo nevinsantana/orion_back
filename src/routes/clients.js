@@ -10,7 +10,7 @@ const {
   updateClient,
   restoreClient,
   getDeletedClients
-} = require("../controllers/ClientsController");
+} = require("../controllers/clientsController");
 
 
 router.get("/", authMiddleware, getClients); 
