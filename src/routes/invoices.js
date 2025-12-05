@@ -14,7 +14,8 @@ const {
   updatePaymentStatus,
   getAllReminderCodes,
   getReminderCodeById,
-  generateInvoiceTxt
+  generateInvoiceTxt,
+  invoiceAttachmentMiddleware
 } = require("../controllers/invoicesController");
 
 const { 
@@ -32,12 +33,12 @@ router.get("/generate-txt/:id", generateInvoiceTxt);
 
 // Rutas con ID
 router.get("/:id", authMiddleware, getInvoice);
-router.put("/:id", authMiddleware, updateInvoice);
+router.put("/:id", authMiddleware, invoiceAttachmentMiddleware, updateInvoice);
 router.delete("/:id", authMiddleware, destroyInvoice);
 
 // Ruta de Restauración
 router.post("/restore/:id", authMiddleware, restoreInvoice);
-router.post("/", authMiddleware, postInvoice);
+router.post("/", authMiddleware, invoiceAttachmentMiddleware, postInvoice);
 router.post("/update-status", authMiddleware, updatePaymentStatus);
 router.post("/timbrar", timbrar);
 

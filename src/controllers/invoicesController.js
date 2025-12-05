@@ -12,6 +12,23 @@ const soap = require('soap');
 const { buildCfdi40Xml, buildCfdi40Txt } = require('../helpers/cfdiBuilder');
 const crypto = require('crypto');
 const geminiService = require('../services/geminiService');
+
+const INVOICE_ATTACHMENT_DIR = path.join(__dirname, '..', '..', 'public', 'invoices');
+const invoiceDiskStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        if (!fs.existsSync(INVOICE_ATTACHMENT_DIR)) {
+            fs.mkdirSync(INVOICE_ATTACHMENT_DIR, { recursive: true });
+        }
+        cb(null, INVOICE_ATTACHMENT_DIR);
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        cb(null, `invoice-${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
+    }
+});
+
+// ⚠️ MIDDLEWARE NUEVO: Espera el campo 'invoiceAttachment'
+const invoiceAttachmentMiddleware = multer({ storage: invoiceDiskStorage }).single('invoiceAttachment');
 /**
  * GET Invoice by ID
  */
@@ -48,36 +65,99 @@ const getInvoices = async (req, res) => {
 };
 
 const postInvoice = async (req, res) => {
+    // Si la subida de Multer fue exitosa, req.file.path tiene la ruta de disco.
+    const filePath = req.file ? req.file.path : null; 
     try {
-        const newInvoice = await Invoice.create(req.body);
-        res.status(201).json({ code: 1, message: 'Factura creada exitosamente', invoice: newInvoice });
+        const fileAttachment = req.file; 
+        let invoiceData = req.body;
+        
+        // 1. Lógica de Subida Opcional: Adjuntar la URL pública
+        if (fileAttachment) {
+            const publicPath = `/invoices/${fileAttachment.filename}`;
+            
+            // ✅ CORRECCIÓN: Usar el nombre de columna 'file'
+            invoiceData.file = fileAttachment.filename; 
+        } else {
+             // Si no hay archivo, asegúrate de que la columna reciba NULL
+             invoiceData.file = null;
+        }
+
+        // 2. Crear el nuevo registro en la base de datos
+        const newInvoice = await Invoice.create(invoiceData);
+
+        // 3. Éxito: El archivo ya está guardado permanentemente
+        res.status(201).json({ 
+            code: 1, 
+            message: 'Factura creada exitosamente', 
+            invoice: newInvoice 
+        });
+    
     } catch (error) {
         console.error('Error al crear factura:', error);
-        // Manejo básico de errores de validación/unicidad
+        
+        // 4. LIMPIEZA CRÍTICA: Eliminar el archivo del disco si la inserción en DB falla
+        if (filePath && fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath); 
+        }
+        
+        // Manejo de errores
         res.status(400).json({ code: 0, error: 'Fallo al crear la factura.' });
     }
 };
 
 const updateInvoice = async (req, res) => {
+    // 1. Obtener la ruta temporal del nuevo archivo para limpieza en caso de fallo
+    const newFilePath = req.file ? req.file.path : null; 
+    
     try {
         const { id } = req.params;
-        
+        const file = req.file; // Archivo subido por Multer (opcional)
+        let dataToUpdate = req.body; // Datos de texto/formulario
+
+        // 2. Buscar el registro de la factura
         const invoice = await Invoice.findByPk(id);
 
         if (!invoice) {
             return res.status(404).json({ code: 0, message: 'Factura no encontrada para actualizar.' });
         }
 
-        // 2. Actualizar las propiedades en memoria
-        invoice.set(req.body); 
+        // 3. LÓGICA DE ARCHIVO ADJUNTO (Actualización Opcional)
+        if (file) {
+            // A. Construir la ruta pública
+            const publicPath = `/invoices/${file.filename}`;
+            
+            // B. Guardar la nueva ruta en los datos a actualizar
+            dataToUpdate.file = file.filename; 
 
-        // 3. Guardar en la base de datos
+            // C. Limpieza del archivo antiguo (Si ya existía un adjunto)
+            if (invoice.file) {
+                // Generar la ruta absoluta del archivo antiguo
+                const oldDiskPath = path.join(__dirname, '..', '..', 'public', invoice.file);
+                
+                if (fs.existsSync(oldDiskPath)) {
+                    fs.unlinkSync(oldDiskPath); // Eliminar el archivo antiguo del disco
+                    console.log(`[LIMPIEZA] Archivo adjunto antiguo eliminado: ${invoice.file}`);
+                }
+            }
+        }
+        // Nota: Si el usuario envía un archivo, Multer ya lo guardó en disco.
+        
+
+        // 4. Actualizar las propiedades en memoria y guardar en DB
+        invoice.set(dataToUpdate);
         await invoice.save(); 
 
         res.status(200).json({ code: 1, message: 'Factura actualizada exitosamente' });
         
     } catch (error) {
         console.error('Error al actualizar factura:', error);
+        
+        // 5. LIMPIEZA CRÍTICA: Si la BD falla, eliminar el archivo nuevo subido
+        if (newFilePath && fs.existsSync(newFilePath)) {
+            fs.unlinkSync(newFilePath);
+            console.log(`[LIMPIEZA] Archivo subido (temporal) eliminado por fallo de DB.`);
+        }
+        
         res.status(500).json({ code: 0, error: 'Fallo al actualizar la factura.' });
     }
 };
@@ -531,5 +611,6 @@ module.exports = {
     updatePaymentStatus,
     getAllReminderCodes,
     getReminderCodeById,
-    generateInvoiceTxt
+    generateInvoiceTxt,
+    invoiceAttachmentMiddleware
 };

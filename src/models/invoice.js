@@ -96,7 +96,11 @@ module.exports = (sequelize, DataTypes) => {
     email_recepcion_facturas: {
       type: DataTypes.STRING,
       allowNull: true
-    }
+    },
+    file: {
+      type: DataTypes.STRING(500),
+      allowNull: true
+    },
   }, {
     sequelize,
     modelName: 'Invoice',
